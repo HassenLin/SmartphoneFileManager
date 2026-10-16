@@ -1,5 +1,12 @@
 # LOG
 
+- 2026-10-16｜**欄位標題排序、記住各窗格路徑**
+  - 表格原本未綁定 `sortOrder`，點標題不會排序。新增 `FileColumnComparator`（標題 ⇄ `SortType` 轉接，
+    排序真相仍是 `BrowserModel.sortType`，與排序選單共用）；「類型」排序沒有對應欄位，標題不顯示箭頭。
+  - `BrowserModel` 以 UserDefaults `panePaths.<side>`（`kind:deviceID` → 路徑）記住每個來源最後的資料夾，
+    啟動與切換來源時恢復；恢復的資料夾載入失敗則退回起始資料夾（只退一次）。來源本身原已記住（`paneSource.<side>`）。
+  - 驗證：寫入存在／不存在的路徑後重啟，前者恢復、後者退回 `/sdcard`。
+
 - 2026-10-16｜**修正：多選刪除確認視窗當機（中文語系）**
   - 「Delete %lld items from %@?」的翻譯調換了參數順序卻未寫位置編號（`要從 %@ 刪除 %lld…`），
     `%@` 拿到整數（項目數）被當物件指標讀取 → `EXC_BAD_ACCESS`。改為 `%2$@`／`%1$lld`。

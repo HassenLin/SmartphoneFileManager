@@ -232,13 +232,18 @@ struct BrowserPaneView: View {
 
     private var table: some View {
         @Bindable var model = model
-        return Table(of: FileItem.self, selection: $model.selection) {
+        // 點欄位標題排序：轉成 model.sortType（與排序選單同一份狀態）
+        let sortOrder = Binding<[FileColumnComparator]>(
+            get: { FileColumnComparator(model.sortType).map { [$0] } ?? [] },
+            set: { if let first = $0.first { model.sortType = first.sortType } }
+        )
+        return Table(of: FileItem.self, selection: $model.selection, sortOrder: sortOrder) {
             // 名稱欄不給 ideal，吸收剩餘寬度；其餘欄固定窄寬，窗格窄時不出現水平捲軸
-            TableColumn("Name") { FileNameCell(item: $0) }
+            TableColumn("Name", sortUsing: FileColumnComparator(.name)) { FileNameCell(item: $0) }
                 .width(min: 120)
-            TableColumn("Size") { Text($0.sizeText).monospacedDigit().foregroundStyle(.secondary) }
+            TableColumn("Size", sortUsing: FileColumnComparator(.size)) { Text($0.sizeText).monospacedDigit().foregroundStyle(.secondary) }
                 .width(68)
-            TableColumn("Modified") { Text(FileDateFormat.string($0.modified)).monospacedDigit().foregroundStyle(.secondary) }
+            TableColumn("Modified", sortUsing: FileColumnComparator(.date)) { Text(FileDateFormat.string($0.modified)).monospacedDigit().foregroundStyle(.secondary) }
                 .width(132)
             TableColumn("Permissions") {
                 Text($0.permissions).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)

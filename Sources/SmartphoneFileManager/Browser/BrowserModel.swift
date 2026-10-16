@@ -28,7 +28,9 @@ final class BrowserModel {
     let side: PaneSide
     private(set) var sourceID: SourceID?
     private(set) var source: (any FileSource)?
-    private(set) var path = "/"
+    private(set) var path = "/" {
+        didSet { rememberPath() }
+    }
     private(set) var files: [FileItem] = []
     private(set) var phase: Phase = .noSource
     private(set) var isBusy = false
@@ -42,8 +44,10 @@ final class BrowserModel {
     /// 顯示名稱與路徑最後一段不同的項目（iPhone App 資料夾：路徑是 bundle id、顯示 App 名稱），路徑列用
     private(set) var displayNames: [String: String] = [:]
     @ObservationIgnored private var loadTask: Task<Void, Never>?
-    /// 每個來源最後停留的資料夾，切換來源再切回來時恢復
+    /// 每個來源最後停留的資料夾：切換來源再切回來、或下次啟動時恢復（存於 UserDefaults，每個窗格一份）
     @ObservationIgnored private var lastPaths: [SourceID: String] = [:]
+    /// 目前路徑是「恢復的」而非使用者剛點進去的：載入失敗（資料夾已不存在）時退回起始資料夾，而不是停在錯誤畫面
+    @ObservationIgnored private var isRestoredPath = false
     @ObservationIgnored private let toasts: ToastCenter
 
     init(side: PaneSide, sourceID: SourceID?, toasts: ToastCenter) {
@@ -51,7 +55,43 @@ final class BrowserModel {
         self.sourceID = sourceID
         self.toasts = toasts
         self.sortType = SortType(rawValue: UserDefaults.standard.string(forKey: SettingsKey.defaultSortType) ?? "") ?? .typeAscending
-        if sourceID == .mac { path = Self.defaultMacPath() }
+        self.lastPaths = Self.loadPaths(side)
+        if let sourceID, let saved = lastPaths[sourceID] {
+            path = saved
+            isRestoredPath = true
+        } else if sourceID == .mac {
+            path = Self.defaultMacPath()
+        }
+    }
+
+    // MARK: 路徑記憶
+
+    private static func pathsKey(_ side: PaneSide) -> String { "panePaths.\(side.rawValue)" }
+
+    /// UserDefaults 只收字串鍵：`kind:deviceID` → 路徑
+    private static func storageKey(_ id: SourceID) -> String { "\(id.kind.rawValue):\(id.deviceID)" }
+
+    private static func loadPaths(_ side: PaneSide) -> [SourceID: String] {
+        let stored = UserDefaults.standard.dictionary(forKey: pathsKey(side)) as? [String: String] ?? [:]
+        var paths: [SourceID: String] = [:]
+        for (key, path) in stored {
+            let parts = key.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+            guard parts.count == 2, let kind = SourceID.Kind(rawValue: String(parts[0])) else { continue }
+            paths[SourceID(kind: kind, deviceID: String(parts[1]))] = path
+        }
+        return paths
+    }
+
+    private func rememberPath() {
+        guard let sourceID else { return }
+        lastPaths[sourceID] = path
+        let stored = Dictionary(uniqueKeysWithValues: lastPaths.map { (Self.storageKey($0.key), $0.value) })
+        UserDefaults.standard.set(stored, forKey: Self.pathsKey(side))
+    }
+
+    /// 起始資料夾（恢復失敗時的退路）
+    private var startPath: String {
+        sourceID == .mac ? Self.defaultMacPath() : (source?.homePath ?? "/")
     }
 
     var visibleFiles: [FileItem] {
@@ -72,9 +112,9 @@ final class BrowserModel {
     /// 使用者在窗格選單選擇來源
     func select(_ id: SourceID, resolved: (any FileSource)?) {
         guard id != sourceID else { return }
-        if let current = sourceID { lastPaths[current] = path }
         sourceID = id
         source = resolved
+        isRestoredPath = lastPaths[id] != nil
         path = lastPaths[id] ?? (id == .mac ? Self.defaultMacPath() : (resolved?.homePath ?? "/"))
         selection = []
         filterText = ""
@@ -87,7 +127,7 @@ final class BrowserModel {
         let executableChanged = (source as? AndroidFileSource)?.device != (resolved as? AndroidFileSource)?.device
         source = resolved
         if wasAvailable != (resolved != nil) || executableChanged {
-            if resolved != nil, path == "/", sourceID != .mac { path = resolved!.homePath }
+            if resolved != nil, path == "/", sourceID != .mac, !isRestoredPath { path = resolved!.homePath }
             reload()
         }
     }
@@ -122,6 +162,7 @@ final class BrowserModel {
                     displayNames[item.path] = item.name
                 }
                 phase = .loaded
+                isRestoredPath = false
                 let ids = Set(files.map(\.id))
                 selection.formIntersection(ids)
                 let highlight = pendingHighlight.intersection(ids)
@@ -130,6 +171,13 @@ final class BrowserModel {
             } catch is CancellationError {
             } catch {
                 guard path == self.path else { return }
+                // 恢復的資料夾已不存在／無權限：改到起始資料夾（只退一次，避免起始資料夾也失敗時來回重試）
+                if isRestoredPath, source.id == sourceID, path != startPath {
+                    isRestoredPath = false
+                    navigate(to: startPath)
+                    return
+                }
+                isRestoredPath = false
                 files = []
                 phase = .failed(error.localizedDescription)
             }
@@ -137,6 +185,7 @@ final class BrowserModel {
     }
 
     func navigate(to newPath: String, highlight: String? = nil) {
+        isRestoredPath = false
         path = RemotePath.normalize(newPath)
         selection = []
         filterText = ""
