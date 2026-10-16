@@ -15,16 +15,16 @@ struct MainWindowView: View {
             BrowserPaneView(app: app, side: .right)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // 傳輸進度：底部非強制回應面板（不擋操作）
+        .safeAreaInset(edge: .bottom, spacing: 0) { TransferPanel(center: app.transfers) }
         .overlay { ToastOverlay(center: app.toasts) }
         .toolbar { toolbar }
         .navigationTitle("Smartphone File Manager")
         // 裝置接上／拔除／授權狀態改變 → 更新兩窗格的來源可用性
         .onChange(of: app.devices.devices) { _, _ in app.refreshSources() }
         .onChange(of: app.devices.iphones) { _, _ in app.refreshSources() }
+        .onChange(of: app.devices.mtpDevices) { _, _ in app.refreshSources() }
         .sheet(item: $app.sheet) { sheet in sheetContent(sheet) }
-        .sheet(isPresented: Binding(get: { app.transfers.isBusy }, set: { _ in })) {
-            TransferProgressView(center: app.transfers).interactiveDismissDisabled()
-        }
         .confirmationDialog(deletionTitle, isPresented: Binding(
             get: { app.pendingDeletion != nil }, set: { if !$0 { app.pendingDeletion = nil } })
         ) {

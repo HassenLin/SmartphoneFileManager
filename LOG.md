@@ -1,5 +1,11 @@
 # LOG
 
+- 2026-10-16｜**修正：傳輸期間視窗無法操作**
+  - 原因：進度以 sheet（強制回應）顯示，整個傳輸期間擋住視窗；且 `TransferCenter` 一次只允許一個工作，傳輸中發起的新操作被默默忽略。
+  - 改為視窗底部的非強制回應 `TransferPanel`：可同時多個工作、各自進度與取消；同一台 MTP 裝置的工作由 session 佇列自然排隊。
+  - 新增 `ProgressCoalescer`：高頻進度回報（libmtp 每個 USB 區塊一次）合併成主執行緒同時最多一個更新。
+  - 補上 MTP 裝置清單變動時更新窗格（原本只監看 Android／iPhone）。
+
 - 2026-10-16｜**adb 不再收錄於 repo（開源準備）**
   - `vendor/adb`（Google SDK Platform-Tools 二進位，再散布受 Android SDK 授權條款約束）移出 repo 並列入 `.gitignore`，
     並自 git 歷史中移除（尚未推送前改寫）。
