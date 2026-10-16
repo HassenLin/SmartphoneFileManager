@@ -144,6 +144,40 @@ public struct DeviceConnection: Sendable, Hashable {
         return output.text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// `adb exec-out <sh 指令>` 的二進位 stdout **附加**到已開啟的本機檔案（續傳下載用，不逾時）。
+    /// exec-out 不經 pty，二進位資料不會被改寫（`\n` → `\r\n` 之類）。
+    public func execOutAppending(_ command: String, to handle: FileHandle) async throws {
+        let output = try await ProcessRunner.run(
+            client.executable, arguments(["exec-out", command]), timeout: nil, standardOutput: handle)
+        if output.exitCode != 0 { throw AdbError.commandFailed(exitCode: output.exitCode, output: output.text) }
+    }
+
+    /// `adb exec-in <sh 指令>`：本機檔案自第 `offset` 位元組起作為裝置端指令的 stdin（續傳上傳用，不逾時）。
+    ///
+    /// 實測：`Process` 不沿用 FileHandle 的讀取位置（子行程總是從檔案開頭讀），
+    /// 所以改由 macOS 的 `tail -c +N`（lseek 跳過，不讀前段）餵資料，以管線直接接到 adb 的 stdin。
+    /// 兩個子行程之間直接傳遞，本程式不寫入管線，因此不會遇到 SIGPIPE。
+    public func execIn(_ command: String, fromFile url: URL, offset: Int64) async throws {
+        let feeder = Process()
+        feeder.executableURL = URL(fileURLWithPath: "/usr/bin/tail")
+        feeder.arguments = ["-c", "+\(offset + 1)", url.path]
+        let pipe = Pipe()
+        feeder.standardOutput = pipe
+        feeder.standardError = FileHandle.nullDevice
+        try feeder.run()
+        // 父行程不保留寫入端，adb 才收得到 EOF
+        try? pipe.fileHandleForWriting.close()
+        let box = ProcessBox(feeder)
+        defer { box.terminate() }
+        let output = try await withTaskCancellationHandler {
+            try await ProcessRunner.run(client.executable, arguments(["exec-in", command]), timeout: nil,
+                                        standardInput: pipe.fileHandleForReading)
+        } onCancel: {
+            box.terminate()
+        }
+        if output.exitCode != 0 { throw AdbError.commandFailed(exitCode: output.exitCode, output: output.text) }
+    }
+
     /// `adb exec-out <args>` 的二進位 stdout 直接寫入本機檔案（screencap 用）
     public func execOut(_ command: [String], to destination: URL) async throws {
         FileManager.default.createFile(atPath: destination.path, contents: nil)
@@ -156,4 +190,11 @@ public struct DeviceConnection: Sendable, Hashable {
             throw AdbError.commandFailed(exitCode: output.exitCode, output: output.text)
         }
     }
+}
+
+/// 把 `Process` 交給取消處理器（`Process` 不是 Sendable；`terminate` 可由任意執行緒呼叫）
+private final class ProcessBox: @unchecked Sendable {
+    private let process: Process
+    init(_ process: Process) { self.process = process }
+    func terminate() { if process.isRunning { process.terminate() } }
 }

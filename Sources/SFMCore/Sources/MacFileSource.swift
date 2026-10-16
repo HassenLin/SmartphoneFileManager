@@ -4,7 +4,7 @@ import Foundation
 public struct MacFileSource: FileSource {
     public let id = SourceID.mac
     public var homePath: String { FileManager.default.homeDirectoryForCurrentUser.path }
-    public var capabilities: SourceCapabilities { SourceCapabilities(deleteMovesToTrash: true) }
+    public var capabilities: SourceCapabilities { SourceCapabilities(deleteMovesToTrash: true, resumable: true) }
 
     public init() {}
 
@@ -69,7 +69,7 @@ public struct MacFileSource: FileSource {
 
     /// `FileManager.copyItem` 是同步阻塞呼叫，大檔案要放到背景執行緒，避免卡住呼叫端所在的 actor。
     /// 目的已存在時覆寫——與 adb push／afc put -f 的語意一致（編輯器存檔依賴這點；
-    /// FileTransfer 一律給不重複的新名稱，不會走到覆寫）。
+    /// 工作佇列的覆寫由使用者在衝突對話框選擇）。
     static func copyOffMain(from source: URL, to target: URL,
                             onProgress: @escaping @Sendable (Double) -> Void = { _ in }) async throws {
         let total = localSize(source)
@@ -118,5 +118,37 @@ public struct MacFileSource: FileSource {
             total += Int64((try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
         }
         return total
+    }
+
+    // MARK: 工作佇列（續傳）
+
+    public func stat(_ path: String) async throws -> FileStat? {
+        guard let attributes = try? fm.attributesOfItem(atPath: path) else { return nil }
+        return FileStat(size: (attributes[.size] as? Int64) ?? 0,
+                        modified: attributes[.modificationDate] as? Date,
+                        isDirectory: (attributes[.type] as? FileAttributeType) == .typeDirectory)
+    }
+
+    /// 同一磁碟區內 `moveItem` 只是改名；跨磁碟區會整份複製
+    public func moveIsInstant(_ path: String, to target: String) async -> Bool {
+        func volume(_ path: String) -> NSObject? {
+            (try? URL(fileURLWithPath: path).resourceValues(forKeys: [.volumeIdentifierKey]))?.volumeIdentifier as? NSObject
+        }
+        guard let a = volume(path), let b = volume(RemotePath.parent(of: target)) else { return true }
+        return a.isEqual(b)
+    }
+
+    public func resumeDownload(_ path: String, to localURL: URL, totalSize: Int64,
+                               onProgress: @escaping @Sendable (Double) -> Void) async throws {
+        try await LocalResumableCopy.copy(from: URL(fileURLWithPath: path), to: localURL, onProgress: onProgress)
+    }
+
+    public func resumeUpload(_ localURL: URL, to path: String, onProgress: @escaping @Sendable (Double) -> Void) async throws {
+        try await LocalResumableCopy.copy(from: localURL, to: URL(fileURLWithPath: path), onProgress: onProgress)
+    }
+
+    public func resumeCopy(_ path: String, to target: String, totalSize: Int64,
+                           onProgress: @escaping @Sendable (Double) -> Void) async throws {
+        try await LocalResumableCopy.copy(from: URL(fileURLWithPath: path), to: URL(fileURLWithPath: target), onProgress: onProgress)
     }
 }

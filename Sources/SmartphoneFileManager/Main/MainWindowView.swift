@@ -15,8 +15,11 @@ struct MainWindowView: View {
             BrowserPaneView(app: app, side: .right)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        // 傳輸進度：底部非強制回應面板（不擋操作）
-        .safeAreaInset(edge: .bottom, spacing: 0) { TransferPanel(center: app.transfers) }
+        // 工作面板：底部、可收合（不擋操作）；衝突詢問以 sheet 顯示（與 app.sheet 分掛在不同 view 上）
+        .safeAreaInset(edge: .bottom, spacing: 0) { TasksPanel(app: app) }
+        .sheet(item: Binding(get: { app.queue.conflicts.first }, set: { _ in })) { conflict in
+            ConflictSheet(conflict: conflict, queue: app.queue).interactiveDismissDisabled()
+        }
         .overlay { ToastOverlay(center: app.toasts) }
         .toolbar { toolbar }
         .navigationTitle("Smartphone File Manager")

@@ -30,12 +30,17 @@ public struct SourceCapabilities: Sendable {
     public var nativeCopy = true
     /// 刪除是移到垃圾桶（Mac），UI 文案不同
     public var deleteMovesToTrash = false
+    /// 單檔可從中斷處續傳（`resumeDownload`／`resumeUpload`／`resumeCopy` 真的接續而非整份重傳）。
+    /// iPhone 的 AFC 無法指定讀寫位置，為 false；衝突對話框據此決定是否提供「續傳」。
+    public var resumable = false
 
-    public init(permissions: Bool = false, search: Bool = false, nativeCopy: Bool = true, deleteMovesToTrash: Bool = false) {
+    public init(permissions: Bool = false, search: Bool = false, nativeCopy: Bool = true,
+                deleteMovesToTrash: Bool = false, resumable: Bool = false) {
         self.permissions = permissions
         self.search = search
         self.nativeCopy = nativeCopy
         self.deleteMovesToTrash = deleteMovesToTrash
+        self.resumable = resumable
     }
 }
 
@@ -44,7 +49,7 @@ public struct SourceCapabilities: Sendable {
 /// 契約：
 /// - 路徑一律為該來源內的絕對路徑；`target` 參數是**完整目的路徑**（含名稱），不是目錄。
 /// - 跨來源傳輸只透過 `download`（來源 → Mac 本機檔案）與 `upload`（Mac 本機檔案 → 來源），
-///   由 `FileTransfer` 決定是否需要 Mac 暫存區中繼。來源之間互不認識。
+///   由工作佇列（`TransferExecutor`）決定是否需要 Mac 暫存區中繼。來源之間互不認識。
 /// - 所有方法可被 Task 取消（底層子行程會被終止）。
 public protocol FileSource: Sendable {
     var id: SourceID { get }
@@ -70,6 +75,21 @@ public protocol FileSource: Sendable {
                   onProgress: @escaping @Sendable (Double) -> Void) async throws
     /// Mac 本機檔案或資料夾 → 來源（`path` 為完整目的路徑）
     func upload(_ localURL: URL, to path: String, onProgress: @escaping @Sendable (Double) -> Void) async throws
+
+    // MARK: 工作佇列用（單檔、可續傳）——預設實作見 ResumableTransfer.swift
+
+    /// 檔案資訊；不存在時為 nil（衝突對話框顯示大小與日期、續傳判斷已傳大小）
+    func stat(_ path: String) async throws -> FileStat?
+    /// 同來源內 `move` 是否只是改名、瞬間完成（否則佇列改為逐檔複製後刪除，才能顯示進度與續傳）
+    func moveIsInstant(_ path: String, to target: String) async -> Bool
+    /// 單檔 來源 → Mac：`localURL` 已有部分內容時從其大小接著下載
+    func resumeDownload(_ path: String, to localURL: URL, totalSize: Int64,
+                        onProgress: @escaping @Sendable (Double) -> Void) async throws
+    /// 單檔 Mac → 來源：目的已有部分內容時從其大小接著上傳
+    func resumeUpload(_ localURL: URL, to path: String, onProgress: @escaping @Sendable (Double) -> Void) async throws
+    /// 單檔同來源內複製：目的已有部分內容時接著複製
+    func resumeCopy(_ path: String, to target: String, totalSize: Int64,
+                    onProgress: @escaping @Sendable (Double) -> Void) async throws
 }
 
 public extension FileSource {

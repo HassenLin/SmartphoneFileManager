@@ -60,13 +60,16 @@ struct PendingDeletion {
 
 /// App 層協調者：持有各子模型，負責跨窗格／跨來源的動作（剪貼簿、傳輸、拖放、開啟檔案）。
 ///
-/// 依賴方向：View → AppModel → BrowserModel／DeviceMonitor → SFMCore（FileSource、FileTransfer）。
+/// 依賴方向：View → AppModel → BrowserModel／DeviceMonitor → SFMCore（FileSource、TransferQueue）。
 /// 兩個 BrowserModel 互不參考；需要兩邊資訊的動作都集中在這裡。
 @MainActor
 @Observable
 final class AppModel {
     let toasts = ToastCenter()
+    /// 短暫的背景作業（開啟檔案、安裝 APK）
     let transfers = TransferCenter()
+    /// 拷貝／移動／刪除的工作佇列（樹狀進度、暫停／繼續／停止、關閉 app 後可繼續）
+    let queue = TransferQueue()
     let bookmarks = BookmarkStore()
     let devices = DeviceMonitor()
     let terminals = TerminalStore()
@@ -88,6 +91,8 @@ final class AppModel {
         left = BrowserModel(side: .left, sourceID: Self.savedSource(.left) ?? .mac, toasts: toasts)
         right = BrowserModel(side: .right, sourceID: Self.savedSource(.right), toasts: toasts)
         isLeftPaneCollapsed = UserDefaults.standard.bool(forKey: SettingsKey.localPaneCollapsed)
+        queue.resolver = { [weak self] in self?.resolve($0) }
+        queue.onJobFinished = { [weak self] in self?.jobFinished($0) }
     }
 
     func pane(_ side: PaneSide) -> BrowserModel { side == .left ? left : right }
@@ -208,6 +213,8 @@ final class AppModel {
         }
         left.updateResolved(resolve(left.sourceID))
         right.updateResolved(resolve(right.sourceID))
+        // 裝置接上：等待中的工作可以開始
+        queue.schedule()
     }
 
     /// 某來源內容變了：所有顯示該來源的窗格都重新載入
@@ -290,48 +297,41 @@ final class AppModel {
 
     // MARK: 傳輸
 
-    /// 任意來源 → 某窗格的資料夾。實際路徑選擇（原生／經 Mac 中繼）見 `FileTransfer`。
+    /// 任意來源 → 某窗格的資料夾：加入工作佇列（規劃、衝突、續傳見 `TransferQueue`）
     func transfer(_ items: [FileItem], from sourceID: SourceID, to side: PaneSide, directory: String? = nil,
                   move: Bool, completion: @escaping @MainActor () -> Void = {}) {
         let destinationPane = pane(side)
         guard !items.isEmpty else { return }
-        guard let source = resolve(sourceID) else {
-            return toasts.error(String(localized: "The source device is not connected"))
-        }
-        guard let destination = destinationPane.source, let destinationID = destinationPane.sourceID else {
+        guard destinationPane.source != nil, let destinationID = destinationPane.sourceID else {
             return toasts.error(String(localized: "The destination is not available"))
         }
-        let directory = directory ?? destinationPane.path
-        let title = move ? String(localized: "Moving") : String(localized: "Copying")
-
-        transfers.start(title: "\(title) → \(self.title(for: destinationID))") { center in
-            let result = try await FileTransfer.run(items: items, from: source, to: destination,
-                                                    directory: directory, move: move, report: center.transferSink())
-            await MainActor.run {
-                self.finishTransfer(result, sourceID: sourceID, destinationID: destinationID, move: move)
-            }
-        } completion: { [self] error in
-            if let error {
-                if error is CancellationError { toasts.success(String(localized: "Transfer cancelled")) } else { toasts.error(error) }
-                reloadPanes(showing: destinationID)
-                if move { reloadPanes(showing: sourceID) }
-            }
-            completion()
-        }
+        queue.enqueue(move ? .move : .copy, items: items, from: sourceID, to: destinationID,
+                      directory: directory ?? destinationPane.path)
+        completion()
     }
 
-    private func finishTransfer(_ result: FileTransfer.Result, sourceID: SourceID, destinationID: SourceID, move: Bool) {
-        if result.failures.isEmpty {
-            if !result.completed.isEmpty {
-                toasts.success(move ? String(localized: "Moved \(result.completed.count) item(s)")
-                                    : String(localized: "Copied \(result.completed.count) item(s)"))
-            }
-        } else {
-            let detail = result.failures.map { "\($0.name): \($0.message)" }.joined(separator: "\n")
-            toasts.error(String(localized: "\(result.completed.count) succeeded, failed: \(detail)"))
+    /// 工作結束：重新載入相關窗格並提示
+    private func jobFinished(_ job: TransferJob) {
+        reloadPanes(showing: job.source)
+        if let destination = job.destination {
+            let completed = job.roots.filter { $0.state == .done }.map(\.targetPath)
+            reloadPanes(showing: destination, highlight: completed)
         }
-        if move { reloadPanes(showing: sourceID) }
-        reloadPanes(showing: destinationID, highlight: result.completed)
+        switch job.state {
+        case .completed:
+            let count = job.items.count
+            switch job.kind {
+            case .copy: toasts.success(String(localized: "Copied \(count) item(s)"))
+            case .move: toasts.success(String(localized: "Moved \(count) item(s)"))
+            case .delete:
+                toasts.success(job.source == .mac ? String(localized: "Moved \(count) item(s) to Trash")
+                                                  : String(localized: "Deleted \(count) item(s)"))
+            }
+        case .failed:
+            toasts.error(job.message ?? String(localized: "Some items failed. See the task list for details."))
+        default:
+            break
+        }
     }
 
     /// 「複製／移動到另一窗格」
@@ -340,7 +340,7 @@ final class AppModel {
         transfer(items, from: sourceID, to: side.other, move: move)
     }
 
-    /// 把非 Mac 項目匯出到選擇的 Mac 資料夾
+    /// 把非 Mac 項目匯出到選擇的 Mac 資料夾（加入工作佇列）
     func exportWithPanel(_ items: [FileItem], from side: PaneSide) {
         guard let sourceID = pane(side).sourceID else { return }
         let panel = NSOpenPanel()
@@ -348,16 +348,8 @@ final class AppModel {
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
         panel.prompt = String(localized: "Export Here")
-        guard panel.runModal() == .OK, let url = panel.url,
-              let source = resolve(sourceID) else { return }
-        transfers.start(title: String(localized: "Copying to Mac")) { center in
-            let result = try await FileTransfer.run(items: items, from: source, to: MacFileSource(),
-                                                    directory: url.path, move: false, report: center.transferSink())
-            await MainActor.run { self.finishTransfer(result, sourceID: sourceID, destinationID: .mac, move: false) }
-        } completion: { [toasts] error in
-            if let error, !(error is CancellationError) { toasts.error(error) }
-            NSWorkspace.shared.activateFileViewerSelecting([url])
-        }
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        queue.enqueue(.copy, items: items, from: sourceID, to: .mac, directory: url.path)
     }
 
     // MARK: 刪除
@@ -371,12 +363,9 @@ final class AppModel {
     func confirmDelete() {
         guard let pending = pendingDeletion else { return }
         pendingDeletion = nil
-        pane(pending.side).delete(pending.items)
-        // 另一窗格若顯示同一來源，也一併更新
-        let other = pane(pending.side.other)
-        if other.sourceID == pane(pending.side).sourceID {
-            Task { try? await Task.sleep(for: .milliseconds(600)); other.reload() }
-        }
+        guard let sourceID = pane(pending.side).sourceID else { return }
+        // 加入工作佇列；完成時 jobFinished 會更新所有顯示該來源的窗格
+        queue.enqueue(.delete, items: pending.items, from: sourceID)
     }
 
     // MARK: 開啟

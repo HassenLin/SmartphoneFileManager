@@ -19,6 +19,8 @@ struct FakeSource: FileSource {
     let id: SourceID
     let store: FakeStore
     var nativeCopy = true
+    /// 每次複製／下載／上傳前的延遲（測試暫停用）
+    var delay: Duration = .zero
     var homePath: String { "/" }
     var capabilities: SourceCapabilities { SourceCapabilities(nativeCopy: nativeCopy) }
 
@@ -42,6 +44,7 @@ struct FakeSource: FileSource {
         }
     }
     func copy(_ path: String, to target: String, onProgress: @escaping @Sendable (Double) -> Void) async throws {
+        try await Task.sleep(for: delay)
         store.with { s in
             s.log.append("cp \(path) \(target)")
             Self.rebase(s, from: path, to: target, keep: true)
@@ -55,6 +58,7 @@ struct FakeSource: FileSource {
         }
     }
     func download(_ path: String, to localURL: URL, expectedSize: Int64?, onProgress: @escaping @Sendable (Double) -> Void) async throws {
+        try await Task.sleep(for: delay)
         let (dirs, files) = store.with { s in
             (s.directories.filter { $0 == path || $0.hasPrefix(path + "/") },
              s.files.filter { $0.key == path || $0.key.hasPrefix(path + "/") })
@@ -67,6 +71,7 @@ struct FakeSource: FileSource {
         }
     }
     func upload(_ localURL: URL, to path: String, onProgress: @escaping @Sendable (Double) -> Void) async throws {
+        try await Task.sleep(for: delay)
         var isDir: ObjCBool = false
         FileManager.default.fileExists(atPath: localURL.path, isDirectory: &isDir)
         if isDir.boolValue {
@@ -94,79 +99,6 @@ struct FakeSource: FileSource {
 
 @Suite("FileTransfer")
 struct FileTransferTests {
-    func makeDevice(_ id: SourceID, nativeCopy: Bool = true) -> (FakeSource, FakeStore) {
-        let store = FakeStore()
-        store.files["/a/x.txt"] = Data("x".utf8)
-        store.files["/a/dir/y.txt"] = Data("y".utf8)
-        store.directories.formUnion(["/a", "/a/dir", "/b"])
-        return (FakeSource(id: id, store: store, nativeCopy: nativeCopy), store)
-    }
-
-    func items(_ source: FakeSource, _ paths: [String]) async throws -> [FileItem] {
-        let listed = try await source.list("/a", includeHidden: true)
-        return listed.filter { paths.contains($0.path) }
-    }
-
-    @Test func sameSourceCopyUsesNativeCopyAndRenamesConflicts() async throws {
-        let (android, store) = makeDevice(.android("A"))
-        let picked = try await items(android, ["/a/x.txt"])
-        let result = try await FileTransfer.run(items: picked, from: android, to: android, directory: "/a", move: false) { _ in }
-        #expect(result.completed == ["/a/x 2.txt"])
-        #expect(store.log == ["cp /a/x.txt /a/x 2.txt"])
-    }
-
-    @Test func sameSourceMoveIntoSameFolderIsSkipped() async throws {
-        let (android, store) = makeDevice(.android("A"))
-        let result = try await FileTransfer.run(items: try await items(android, ["/a/x.txt"]), from: android, to: android,
-                                                directory: "/a", move: true) { _ in }
-        #expect(result.skipped == ["x.txt"] && store.log.isEmpty)
-    }
-
-    @Test func folderCannotGoIntoItself() async throws {
-        let (android, _) = makeDevice(.android("A"))
-        let result = try await FileTransfer.run(items: try await items(android, ["/a/dir"]), from: android, to: android,
-                                                directory: "/a/dir", move: true) { _ in }
-        #expect(result.failures.count == 1 && result.completed.isEmpty)
-    }
-
-    @Test func iPhoneCopyWithinDeviceIsStagedThroughMac() async throws {
-        let (iphone, store) = makeDevice(.iphone("U"), nativeCopy: false)
-        let result = try await FileTransfer.run(items: try await items(iphone, ["/a/dir"]), from: iphone, to: iphone,
-                                                directory: "/b", move: false) { _ in }
-        #expect(result.completed == ["/b/dir"])
-        #expect(store.files["/b/dir/y.txt"] == Data("y".utf8))
-        #expect(store.files["/a/dir/y.txt"] != nil)   // 原件還在
-        #expect(!store.log.contains { $0.hasPrefix("cp") })
-    }
-
-    @Test func crossDeviceMoveDeletesOriginalOnlyAfterCopy() async throws {
-        let (android, androidStore) = makeDevice(.android("A"))
-        let (iphone, iphoneStore) = makeDevice(.iphone("U"), nativeCopy: false)
-        let result = try await FileTransfer.run(items: try await items(android, ["/a/x.txt", "/a/dir"]), from: android,
-                                                to: iphone, directory: "/b", move: true) { _ in }
-        #expect(Set(result.completed) == ["/b/x.txt", "/b/dir"])
-        #expect(iphoneStore.files["/b/dir/y.txt"] == Data("y".utf8))
-        #expect(androidStore.files["/a/x.txt"] == nil && androidStore.files["/a/dir/y.txt"] == nil)
-    }
-
-    @Test func deviceToMacAndBack() async throws {
-        let (android, store) = makeDevice(.android("A"))
-        let mac = MacFileSource()
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("afm-xfer-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
-
-        let down = try await FileTransfer.run(items: try await items(android, ["/a/dir"]), from: android, to: mac,
-                                              directory: root.path, move: false) { _ in }
-        #expect(down.failures.isEmpty)
-        #expect(try String(contentsOf: root.appendingPathComponent("dir/y.txt"), encoding: .utf8) == "y")
-
-        let macItems = try await mac.list(root.path, includeHidden: false)
-        let up = try await FileTransfer.run(items: macItems, from: mac, to: android, directory: "/a", move: false) { _ in }
-        #expect(up.completed == ["/a/dir 2"])            // 同名自動改名
-        #expect(store.files["/a/dir 2/y.txt"] == Data("y".utf8))
-    }
-
     @Test func uniqueNames() {
         #expect(FileName.unique("a.txt", existing: []) == "a.txt")
         #expect(FileName.unique("a.txt", existing: ["a.txt", "a 2.txt"]) == "a 3.txt")

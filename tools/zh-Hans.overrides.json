@@ -2,5 +2,7 @@
   "Screen Mirroring": "投屏",
   "Screen Mirroring (scrcpy)": "投屏（scrcpy）",
   "Apps": "应用",
-  "Apps…": "应用管理…"
+  "Apps…": "应用管理…",
+  "Overwrite": "覆盖",
+  "Skip": "跳过"
 }

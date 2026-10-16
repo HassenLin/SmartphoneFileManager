@@ -3,11 +3,12 @@ import Testing
 @testable import SFMCore
 
 /// MTP 實機測試：只在 `SFM_LIVE=1` 且接著 MTP 裝置時執行。
+/// 注意：一台 MTP 裝置同一時間只能被一個行程開啟，執行前須關閉本 app（及 Android File Transfer 等）。
 ///
 ///     SFM_LIVE=1 swift test --filter MTPLive
 ///
 /// 只在第一個儲存空間的 `Download/afm-live-test-<UUID>`（以及第二個儲存空間根目錄的同名資料夾）內操作，結束時刪除。
-@Suite("MTPLive", .enabled(if: ProcessInfo.processInfo.environment["SFM_LIVE"] == "1" && MTP.isAvailable))
+@Suite("MTPLive", .serialized, .enabled(if: ProcessInfo.processInfo.environment["SFM_LIVE"] == "1" && MTP.isAvailable))
 struct MTPLiveTests {
     @Test func browseTransferAndDeviceSideOperations() async throws {
         let device = try #require(await MTPDeviceManager.shared.refresh().first, "需要已連線的 MTP 裝置")
@@ -79,5 +80,43 @@ struct MTPLiveTests {
         }
         try await mtp.delete(base)
         #expect(try await !mtp.exists(base))
+    }
+
+    /// MTP 續傳：Get Partial Object 下載、編輯物件（Android 擴充）上傳，皆從部分內容接續
+    @Test func resumableTransfers() async throws {
+        let device = try #require(await MTPDeviceManager.shared.refresh().first, "需要已連線的 MTP 裝置")
+        let mtp = MTPFileSource(session: try #require(MTPDeviceManager.shared.session(serial: device.serial)))
+        let first = try #require(try await mtp.list("/", includeHidden: false).first)
+        let tag = "afm-live-test-\(UUID().uuidString.prefix(8))"
+        let base = "\(first.path)/Download/\(tag)"
+        let macDir = FileManager.default.temporaryDirectory.appendingPathComponent(tag)
+        try FileManager.default.createDirectory(at: macDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: macDir) }
+        let size = 9 << 20   // 跨越多個 4MB 分段
+        let content = Data((0..<size).map { UInt8(truncatingIfNeeded: $0 &* 37 &+ 11) })
+        let full = macDir.appendingPathComponent("full.bin")
+        try content.write(to: full)
+        try await mtp.makeDirectory(at: base)
+        do {
+            // 下載續傳：本機先有前 5MB
+            try await mtp.upload(full, to: "\(base)/full.bin") { _ in }
+            let local = macDir.appendingPathComponent("down.bin")
+            try content.prefix(5 << 20).write(to: local)
+            try await mtp.resumeDownload("\(base)/full.bin", to: local, totalSize: Int64(size)) { _ in }
+            #expect(try Data(contentsOf: local) == content)
+
+            // 上傳續傳：裝置先有前 3MB，接著寫完後下載比對
+            let head = macDir.appendingPathComponent("head.bin")
+            try content.prefix(3 << 20).write(to: head)
+            try await mtp.upload(head, to: "\(base)/up.bin") { _ in }
+            try await mtp.resumeUpload(full, to: "\(base)/up.bin") { _ in }
+            #expect(try await mtp.stat("\(base)/up.bin")?.size == Int64(size))
+            let back = macDir.appendingPathComponent("back.bin")
+            try await mtp.download("\(base)/up.bin", to: back, expectedSize: nil) { _ in }
+            #expect(try Data(contentsOf: back) == content)
+        } catch {
+            Issue.record(error)
+        }
+        try await mtp.delete(base)
     }
 }

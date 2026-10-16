@@ -269,22 +269,6 @@ final class BrowserModel {
     }
 
     /// 刪除（Mac 為移到垃圾桶）。逐項執行，失敗的項目彙整後一次回報。
-    func delete(_ items: [FileItem]) {
-        perform(success: nil) { [toasts] source in
-            var failures: [String] = []
-            for item in items {
-                do { try await source.delete(item.path) } catch { failures.append(item.name) }
-            }
-            if failures.isEmpty {
-                toasts.success(source.capabilities.deleteMovesToTrash
-                    ? String(localized: "Moved \(items.count) item(s) to Trash")
-                    : String(localized: "Deleted \(items.count) item(s)"))
-            } else {
-                toasts.error(String(localized: "Failed to delete: \(failures.joined(separator: ", "))"))
-            }
-        }
-    }
-
     func changeMode(_ item: FileItem, mode: String) {
         perform(success: String(localized: "Permissions changed"), highlight: item.path) { source in
             guard let android = source as? AndroidFileSource else { return }

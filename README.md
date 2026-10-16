@@ -22,7 +22,9 @@
 | 拷貝／剪下／貼上 | 表格焦點時 ⌘C／⌘X／⌘V；右鍵「拷貝、剪下、貼上、貼到「資料夾」」；對單檔、資料夾、多選都適用。Finder 拷貝的檔案可直接貼到裝置；Mac 項目拷貝後可貼到 Finder |
 | 刪除 | Delete 鍵或右鍵；Mac 為移到垃圾桶，裝置為永久刪除（含資料夾內容），皆會確認 |
 | 窗格互傳 | 右鍵「複製／移動到另一窗格」、拖放（窗格 ⇄ 窗格、Finder → 窗格、Mac 窗格 → Finder；裝置檔案存到 Mac 用「匯出」或拖到 Mac 窗格）；同 Finder：同一來源拖放為移動（原生 mv），按住 Option 為拷貝，不同來源及 Finder 拖入為拷貝 |
-| 傳輸引擎 | 同來源原生 cp／mv，不經 Mac（cp 與 Android 內部儲存 ⇄ SD 卡等跨檔案系統 mv 會預檢空間並顯示進度；iPhone 的 AFC 沒有 copy，iPhone 內複製仍經 Mac）；跨來源經 Mac 暫存區中繼；剪下 = 複製成功後才刪來源；同名自動改名（`a 2.txt`）；進度顯示在視窗底部（不擋操作，可同時多個傳輸、各自取消）、取消時清掉不完整檔案 |
+| 工作佇列 | 拷貝／移動／刪除都進入底部「工作」面板（可收合、可調高度）：樹狀展開到檔案、各自進度；暫停／繼續／停止／移除；每台裝置一次一個工作（不同裝置並行）；**關閉 app 後保留**，重開時為暫停、按繼續才執行 |
+| 衝突與續傳 | 目的已有同名檔案時詢問（類似 FTP）：並列兩邊大小與日期，可選續傳／覆寫／保留兩者／略過，可套用到其餘衝突；資料夾同名則合併。大檔從中斷處續傳：Android（`tail -c`／`exec-in`／`dd`）、MTP（Partial Object）、Mac；iPhone（AFC 無法指定位置）一律重傳 |
+| 傳輸路徑 | 同裝置同檔案系統為原生 mv（瞬間）；其餘逐檔傳輸：同裝置原生 cp（不經 Mac）、跨裝置經 Mac 中繼（暫存於 Application Support，可續傳）；跨檔案系統搬移會預檢空間 |
 | 檔案操作 | 新增資料夾/檔案、改名、權限（Android chmod）、路徑列右鍵拷貝路徑、遞迴搜尋（Android）、書籤（Android）、排序（點名稱／大小／修改日期欄位標題，或排序選單）、篩選 |
 | 編輯器 | 任一來源的文字檔：語法上色、⌘F／⌥⌘F、undo、編碼偵測與切換、無損存檔 |
 | Android 工具 | 終端機（多分頁）、App 管理、裝置資訊、重開機、截圖、寫入剪貼簿、scrcpy 鏡像、無線配對／連線（工具列選擇目標裝置） |
@@ -39,7 +41,7 @@ git clone <repo> SmartphoneFileManager && cd SmartphoneFileManager
 ## 開發
 
 ```bash
-swift test                                            # 單元測試（42 項，含預設略過的實機測試）
+swift test                                            # 單元測試（51 項，含預設略過的實機測試）
 SFM_LIVE=1 swift test --filter LiveDevice             # 實機整合測試（需 Android + iPhone）
 SFM_LIVE=1 swift test --filter MTPLive                # MTP 實機測試（需 MTP 裝置）
 ./tools/make-app.sh && open .build/SmartphoneFileManager.app
@@ -54,13 +56,16 @@ Sources/CLibMTP/              L0：libmtp 標頭的 C 模組（弱連結）
 Sources/SFMCore/              L1：零 UI 相依，可 swift test
   Process/ProcessRunner       子行程唯一入口（可取消、逾時、串流、不經 shell、不依賴 run loop）
   Adb/                        AdbClient/DeviceConnection、AdbLocator、ShellText 跳脫、Tokenizer
-  Sources/                    FileSource 抽象 + Mac／Android／iPhone／MTP 實作、FileTransfer 傳輸引擎
+  Sources/                    FileSource 抽象（含續傳介面 ResumableTransfer）+ Mac／Android／iPhone／MTP 實作
   MTP/                        MTPSession（每台裝置一條序列佇列）、MTPDeviceManager（偵測／開啟／釋放）
+  Queue/                      工作佇列：TransferJob（模型與 FSM）、TransferPlanner（展開樹）、
+                              TransferExecutor（逐節點執行、衝突、續傳）、TransferQueue（排程、持久化）
   Model/                      FileItem、StatParser、SortType、TextCodec、Bookmark
   Services/                   AppPackage／DeviceInfo／Clipboard／Scrcpy（Android 工具）
   Terminal/                   AdbShellSession（FSM）、ShellOutputFilter、補完
 Sources/SmartphoneFileManager/ L4：SwiftUI app
-  App/AppModel                協調者：來源解析、剪貼簿、傳輸、拖放、開啟
+  App/AppModel                協調者：來源解析、剪貼簿、加入工作佇列、拖放、開啟
+  Queue/                      TasksPanel（底部工作面板）、ConflictSheet（衝突對話框）
   Browser/                    BrowserModel（窗格狀態，左右共用）、BrowserPaneView、對話框
   Setup/                      SetupGuideView（安裝導引）
 Tests/SFMCoreTests/           Swift Testing（含 FakeSource 引擎測試、實機測試）
@@ -71,7 +76,7 @@ tools/                        install.sh、make-app.sh、make-icon.swift、AppIc
 
 ## 狀態
 
-- `swift build` 零警告；`swift test` 42/42；實機整合測試（Palma Android + iPhone iOS 27）通過。
+- `swift build` 零警告；`swift test` 51/51；實機整合測試（Palma Android + iPhone iOS 27）通過。
 - 已截圖確認：左 iPhone／右 Android 雙窗格瀏覽。
 - 待手動驗收：UI 上的 ⌘C/⌘X/⌘V、拖放。
 

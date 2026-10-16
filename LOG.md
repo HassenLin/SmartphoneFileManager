@@ -1,5 +1,19 @@
 # LOG
 
+- 2026-10-16｜**工作佇列（樹狀、暫停／繼續／停止、關閉 app 後可繼續）、衝突對話框、續傳**
+  - SFMCore 新增 `Queue/`：`TransferJob`（模型與 FSM：pending／running／waitingForUser／paused／completed／failed／stopped）、
+    `TransferPlanner`（同裝置同檔案系統移動不展開；其餘展開到檔案）、`TransferExecutor`（逐節點、衝突詢問、續傳、移動逐檔刪來源）、
+    `TransferQueue`（每台裝置一次一個工作、`queue.json` 持久化；重開 app 一律暫停，執行中的檔案轉為 partial）。取代舊的 `FileTransfer`。
+  - `FileSource` 新增 `stat`／`moveIsInstant`／`resumeDownload`／`resumeUpload`／`resumeCopy`（預設整份重傳）與 `capabilities.resumable`。
+    Android：新傳輸照用 pull／push／cp，有部分內容時改走 `exec-out tail -c +N`、`exec-in cat >>`、`truncate`＋`dd conv=notrunc`；
+    MTP：Get Partial Object、Begin/Send Partial/End Edit Object；Mac：分塊附加寫入；iPhone 不支援。
+  - 實測陷阱：`Process` 不沿用 FileHandle 的讀取位置（子行程總從檔頭讀），續傳上傳改以 macOS `tail -c +N` 管線餵 `adb exec-in`。
+  - 衝突對話框（`ConflictSheet`）：並列大小（含位元組數）與修改日期；續傳／覆寫／保留兩者／略過；套用到此工作的其餘衝突。
+    資料夾同名合併不詢問；同資料夾複製比照 Finder 自動改名；自己中斷的檔案繼續時直接續傳。
+  - UI：底部可收合、可調高度的 `TasksPanel`（OutlineGroup 樹）；刪除與匯出也走佇列。`TransferCenter` 只留開啟檔案／安裝 APK（類別改名 `ActivityJob`）。
+  - 測試：佇列 13 項（含暫停後「重開」再繼續、停止清除、衝突四種動作、套用全部、每裝置一個工作），連跑 5 次穩定；
+    實機：Android 三種續傳、MTP 下載／上傳續傳（MD5／內容比對）；`LiveDevice` 端對端改走佇列。單元測試共 51 項。
+
 - 2026-10-16｜**修正：傳輸期間視窗無法操作**
   - 原因：進度以 sheet（強制回應）顯示，整個傳輸期間擋住視窗；且 `TransferCenter` 一次只允許一個工作，傳輸中發起的新操作被默默忽略。
   - 改為視窗底部的非強制回應 `TransferPanel`：可同時多個工作、各自進度與取消；同一台 MTP 裝置的工作由 session 佇列自然排隊。

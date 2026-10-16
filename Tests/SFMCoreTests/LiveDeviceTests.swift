@@ -7,10 +7,32 @@ import Testing
 ///     SFM_LIVE=1 swift test --filter LiveDevice
 ///
 /// 只在各裝置的暫存資料夾 `afm-live-test-<UUID>` 內操作，結束時刪除。
-/// 驗證的路徑：Mac→Android、Android→iPhone（經 Mac 中繼）、iPhone 內複製（中繼）、
-/// iPhone 內移動（原生 mv）、iPhone→Mac、跨裝置剪下（刪除來源）、資料夾遞迴刪除。
+/// 驗證的路徑（經工作佇列）：Mac→Android、Android→iPhone（經 Mac 中繼）、iPhone 內複製（中繼）、
+/// iPhone 內移動（原生 mv）、iPhone→Mac、跨裝置剪下（資料夾合併、衝突改名、刪除來源）、資料夾遞迴刪除。
 @Suite("LiveDevice", .enabled(if: ProcessInfo.processInfo.environment["SFM_LIVE"] == "1"))
 struct LiveDeviceTests {
+    /// 以工作佇列執行一個工作並等到結束；衝突一律以 `onConflict` 回答
+    @MainActor
+    func runJob(_ kind: TransferKind, _ items: [FileItem], from: any FileSource, to: any FileSource,
+                directory: String, onConflict: ConflictAction = .rename) async throws -> TransferJob {
+        let queue = TransferQueue(store: QueueStore(directory: FileManager.default.temporaryDirectory
+            .appendingPathComponent("afm-live-queue-\(UUID().uuidString)")))
+        let sources: [SourceID: any FileSource] = [from.id: from, to.id: to]
+        queue.resolver = { sources[$0] }
+        let id = try #require(queue.enqueue(kind, items: items, from: from.id, to: to.id, directory: directory))
+        for _ in 0..<2400 {   // 最多 120 秒
+            if let conflict = queue.conflicts.first { queue.answer(conflict.id, action: onConflict, applyToAll: false) }
+            if let job = queue.job(id), job.state.isFinished { return job }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        throw AdbError.timedOut(command: "TransferQueue job")
+    }
+
+    func failures(_ job: TransferJob) -> [String] {
+        job.allNodes.filter { $0.state == .failed }.map { "\($0.name): \($0.message ?? "")" }
+    }
+
+    @MainActor
     @Test func endToEndAcrossMacAndroidAndIPhone() async throws {
         // 優先用系統 adb，沒有就用本機放置的 vendor/adb（不收錄於 repo）
         let vendored = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../vendor/adb").standardized.path
@@ -38,41 +60,43 @@ struct LiveDeviceTests {
         do {
             // 1. Mac → Android
             let macItems = try await mac.list(macDir.path, includeHidden: false)
-            var result = try await FileTransfer.run(items: macItems, from: mac, to: android, directory: androidDir, move: false) { _ in }
-            #expect(result.failures.isEmpty, "\(result.failures.map(\.message))")
+            var job = try await runJob(.copy, macItems, from: mac, to: android, directory: androidDir)
+            #expect(job.state == .completed, "\(failures(job))")
             let onAndroid = try await android.list(androidDir, includeHidden: false)
             #expect(Set(onAndroid.map(\.name)) == ["測試 檔.txt", "資料 夾"])
 
             // 2. Android → iPhone（經 Mac 中繼，含資料夾）
-            result = try await FileTransfer.run(items: onAndroid, from: android, to: iphone, directory: iphoneDir, move: false) { _ in }
-            #expect(result.failures.isEmpty, "\(result.failures.map(\.message))")
+            job = try await runJob(.copy, onAndroid, from: android, to: iphone, directory: iphoneDir)
+            #expect(job.state == .completed, "\(failures(job))")
             let onIPhone = try await iphone.list(iphoneDir, includeHidden: false)
             #expect(Set(onIPhone.map(\.name)) == ["測試 檔.txt", "資料 夾"])
             #expect(try await iphone.list("\(iphoneDir)/資料 夾", includeHidden: false).first?.size == 300_000)
 
-            // 3. iPhone 內複製（同名 → 自動改名，經中繼）
+            // 3. iPhone 內複製到同一資料夾（建立副本 → 自動改名，經中繼）
             let file = try #require(onIPhone.first { $0.name == "測試 檔.txt" })
-            result = try await FileTransfer.run(items: [file], from: iphone, to: iphone, directory: iphoneDir, move: false) { _ in }
-            #expect(result.completed == ["\(iphoneDir)/測試 檔 2.txt"])
+            job = try await runJob(.copy, [file], from: iphone, to: iphone, directory: iphoneDir)
+            #expect(job.roots.map(\.targetPath) == ["\(iphoneDir)/測試 檔 2.txt"] && job.state == .completed)
 
             // 4. iPhone 內移動（原生 mv）到子資料夾
             let copy = try #require(try await iphone.list(iphoneDir, includeHidden: false).first { $0.name == "測試 檔 2.txt" })
-            result = try await FileTransfer.run(items: [copy], from: iphone, to: iphone, directory: "\(iphoneDir)/資料 夾", move: true) { _ in }
-            #expect(result.failures.isEmpty)
+            job = try await runJob(.move, [copy], from: iphone, to: iphone, directory: "\(iphoneDir)/資料 夾")
+            #expect(job.state == .completed && job.roots.first?.operation == .nativeMove, "\(failures(job))")
             #expect(try await iphone.exists("\(iphoneDir)/資料 夾/測試 檔 2.txt"))
 
             // 5. iPhone → Mac，內容一致
             let back = macDir.appendingPathComponent("back")
             try FileManager.default.createDirectory(at: back, withIntermediateDirectories: true)
-            result = try await FileTransfer.run(items: [file], from: iphone, to: mac, directory: back.path, move: false) { _ in }
+            job = try await runJob(.copy, [file], from: iphone, to: mac, directory: back.path)
             #expect(try String(contentsOf: back.appendingPathComponent("測試 檔.txt"), encoding: .utf8) == "hello 中文")
 
-            // 6. 跨裝置剪下：iPhone 資料夾 → Android，來源應被刪除
+            // 6. 跨裝置剪下：iPhone 資料夾 → Android 已有同名資料夾 → 合併；
+            //    資料夾內同名檔案（blob.bin）衝突以「重新命名」回答。全部搬完後來源資料夾被刪除
             let folder = try #require(try await iphone.list(iphoneDir, includeHidden: false).first { $0.isDirectory })
-            result = try await FileTransfer.run(items: [folder], from: iphone, to: android, directory: androidDir, move: true) { _ in }
-            #expect(result.failures.isEmpty, "\(result.failures.map(\.message))")
+            job = try await runJob(.move, [folder], from: iphone, to: android, directory: androidDir)
+            #expect(job.state == .completed, "\(failures(job))")
             #expect(try await !iphone.exists(folder.path))
-            #expect(try await android.exists("\(androidDir)/資料 夾 2/測試 檔 2.txt"))
+            #expect(try await android.exists("\(androidDir)/資料 夾/測試 檔 2.txt"))
+            #expect(try await android.exists("\(androidDir)/資料 夾/blob 2.bin"))
         } catch {
             Issue.record(error)
         }
@@ -141,6 +165,55 @@ struct LiveDeviceTests {
         }
         try? await android.delete(source)
         try await android.delete(cardDir)
+    }
+
+    /// Android 續傳：下載（tail -c）、上傳（exec-in cat >>）、裝置內複製（truncate + dd）皆從部分內容接續，結果與原檔一致
+    @Test func androidResumableTransfers() async throws {
+        let vendored = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../vendor/adb").standardized.path
+        let adb = AdbClient(executable: AdbLocator.systemPath() ?? vendored)
+        let serial = try #require(try await adb.devices().first(where: \.isReady)?.serial, "需要已授權的 Android 裝置")
+        let device = adb.device(serial)
+        let android = AndroidFileSource(device: device)
+        let tag = "afm-live-test-\(UUID().uuidString.prefix(8))"
+        let dir = "/sdcard/Download/\(tag)"
+        let macDir = FileManager.default.temporaryDirectory.appendingPathComponent(tag)
+        try FileManager.default.createDirectory(at: macDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: macDir) }
+        let size = 3 << 20
+        let content = Data((0..<size).map { UInt8(truncatingIfNeeded: $0 &* 131 &+ 7) })
+        try await android.makeDirectory(at: dir)
+        do {
+            // 準備：完整檔案上傳到裝置
+            let full = macDir.appendingPathComponent("full.bin")
+            try content.write(to: full)
+            try await android.upload(full, to: "\(dir)/full.bin") { _ in }
+            func md5(_ path: String) async throws -> String {
+                try await device.shell("md5sum \(ShellText.quote(path))").first?.split(separator: " ").first.map(String.init) ?? ""
+            }
+            let expected = try await md5("\(dir)/full.bin")
+
+            // 1. 下載續傳：本機先有前 1MB
+            let local = macDir.appendingPathComponent("down.bin")
+            try content.prefix(1 << 20).write(to: local)
+            try await android.resumeDownload("\(dir)/full.bin", to: local, totalSize: Int64(size)) { _ in }
+            #expect(try Data(contentsOf: local) == content)
+
+            // 2. 上傳續傳：裝置先有前 1MB
+            let head = macDir.appendingPathComponent("head.bin")
+            try content.prefix(1 << 20).write(to: head)
+            try await android.upload(head, to: "\(dir)/up.bin") { _ in }
+            try await android.resumeUpload(full, to: "\(dir)/up.bin") { _ in }
+            #expect(try await md5("\(dir)/up.bin") == expected)
+
+            // 3. 裝置內複製續傳：目的先有前 1.5MB（非 1MiB 邊界，驗證截斷對齊）
+            _ = try await device.shell("head -c 1572864 \(ShellText.quote("\(dir)/full.bin")) > \(ShellText.quote("\(dir)/cp.bin"))", check: true)
+            #expect(try await android.stat("\(dir)/cp.bin")?.size == 1_572_864)
+            try await android.resumeCopy("\(dir)/full.bin", to: "\(dir)/cp.bin", totalSize: Int64(size)) { _ in }
+            #expect(try await md5("\(dir)/cp.bin") == expected)
+        } catch {
+            Issue.record(error)
+        }
+        try await android.delete(dir)
     }
 }
 

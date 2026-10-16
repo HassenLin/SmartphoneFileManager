@@ -21,7 +21,7 @@ import Foundation
 /// afcclient 的實測行為（libimobiledevice 1.4.0、iOS 27）：
 /// - **錯誤時結束碼仍為 0**，只能從輸出的 `Error: ...` 判斷失敗。
 /// - `rm` 不支援遞迴，非空資料夾回 "Directory not empty"，因此由這裡自行逐層刪除。
-/// - 沒有 copy；複製一律交給 `FileTransfer` 經 Mac 暫存區中繼（`nativeCopy = false`）。
+/// - 沒有 copy；複製一律由工作佇列（`TransferExecutor`）經 Mac 暫存區中繼（`nativeCopy = false`）。
 /// - `ls -l` 等指令的旗標必須放在 `--` 之後，否則被 afcclient 自己的選項解析器吃掉。
 /// - `get -rf DIR LOCALDIR/` 會在 LOCALDIR 底下建立同名資料夾；`put -rf DIR TARGET` 則直接建立 TARGET。
 /// - 互動模式（stdin 管線）讀到 EOF 不會結束，所以每個操作都起一個獨立行程。
@@ -255,8 +255,13 @@ public struct IPhoneFileSource: FileSource {
         try await delete(path)
     }
 
+    /// 同一 AFC 服務（媒體區內、同一 App 內）才是原生 mv；跨服務會經 Mac 中繼
+    public func moveIsInstant(_ path: String, to target: String) async -> Bool {
+        Self.resolve(path).sameService(as: Self.resolve(target))
+    }
+
     public func copy(_ path: String, to target: String, onProgress: @escaping @Sendable (Double) -> Void) async throws {
-        throw AdbError.invalidArgument("AFC has no copy; FileTransfer stages through the Mac")
+        throw AdbError.invalidArgument("AFC has no copy; the transfer queue stages through the Mac")
     }
 
     /// AFC 的 rm 不遞迴：資料夾先刪內容（含隱藏檔）再刪自己

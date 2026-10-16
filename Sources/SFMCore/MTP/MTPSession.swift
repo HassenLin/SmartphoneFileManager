@@ -178,6 +178,36 @@ public final class MTPSession: @unchecked Sendable {
         return file.pointee.item_id
     }
 
+    // MARK: 部分物件（續傳）
+
+    /// 自 `offset` 讀取最多 `maxBytes`（Get Partial Object，Android 為 64 位元位移版）
+    func readPartial(_ id: UInt32, offset: UInt64, maxBytes: UInt32) throws -> Data {
+        var buffer: UnsafeMutablePointer<UInt8>?
+        var size: UInt32 = 0
+        guard LIBMTP_GetPartialObject(device, id, offset, maxBytes, &buffer, &size) == 0 else {
+            throw failure("MTP Get Partial Object")
+        }
+        defer { free(buffer) }
+        return buffer.map { Data(bytes: $0, count: Int(size)) } ?? Data()
+    }
+
+    /// 在物件 `offset` 處寫入（須包在 `beginEdit`／`endEdit` 之間；Android 擴充指令）
+    func writePartial(_ id: UInt32, offset: UInt64, data: Data) throws {
+        var bytes = data
+        let result = bytes.withUnsafeMutableBytes { raw in
+            LIBMTP_SendPartialObject(device, id, offset, raw.bindMemory(to: UInt8.self).baseAddress, UInt32(raw.count))
+        }
+        guard result == 0 else { throw failure("MTP Send Partial Object") }
+    }
+
+    func beginEdit(_ id: UInt32) throws {
+        guard LIBMTP_BeginEditObject(device, id) == 0 else { throw failure("MTP Begin Edit Object") }
+    }
+
+    func endEdit(_ id: UInt32) throws {
+        guard LIBMTP_EndEditObject(device, id) == 0 else { throw failure("MTP End Edit Object") }
+    }
+
     // MARK: 工具
 
     private static func object(_ file: LIBMTP_file_t) -> MTPObject {

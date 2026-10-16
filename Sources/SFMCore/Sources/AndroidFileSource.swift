@@ -12,7 +12,7 @@ public struct AndroidFileSource: FileSource {
 
     public var id: SourceID { .android(device.serial) }
     public var homePath: String { "/sdcard" }
-    public var capabilities: SourceCapabilities { SourceCapabilities(permissions: true, search: true) }
+    public var capabilities: SourceCapabilities { SourceCapabilities(permissions: true, search: true, resumable: true) }
 
     private func q(_ value: String) -> String { ShellText.quote(value) }
 
@@ -102,6 +102,115 @@ public struct AndroidFileSource: FileSource {
             group.cancelAll()
         }
         onProgress(1)
+    }
+
+    // MARK: 工作佇列（續傳）
+    //
+    // 新傳輸照用最快的 adb pull／push／cp；只有目的已有部分內容時才改走可指定位置的指令
+    // （實機驗證於 toybox：`tail -c +N`、`truncate`、`dd conv=notrunc`、`exec-in cat >>`、exec-out 二進位無損）。
+
+    public func stat(_ path: String) async throws -> FileStat? {
+        // %s 大小、%Y 修改時間（epoch）、%F 類型；-L 跟隨 /sdcard 這類符號連結
+        guard let line = try await device.shell("stat -L -c '%s %Y %F' -- \(q(path)) 2>/dev/null").first else { return nil }
+        let fields = line.split(separator: " ", maxSplits: 2)
+        guard fields.count == 3, let size = Int64(fields[0]) else { return nil }
+        return FileStat(size: size, modified: Double(fields[1]).map { Date(timeIntervalSince1970: $0) },
+                        isDirectory: fields[2].contains("directory"))
+    }
+
+    /// 同一檔案系統（st_dev 相同）才是瞬間的改名
+    public func moveIsInstant(_ path: String, to target: String) async -> Bool {
+        let devices = (try? await device.shell("stat -L -c %d -- \(q(path)) \(q(RemotePath.parent(of: target))) 2>/dev/null"))?
+            .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty } ?? []
+        return devices.count != 2 || devices[0] == devices[1]
+    }
+
+    /// 裝置 → Mac：本機已有 N 位元組時以 `exec-out tail -c +N+1` 接著讀，附加到本機檔案
+    public func resumeDownload(_ path: String, to localURL: URL, totalSize: Int64,
+                               onProgress: @escaping @Sendable (Double) -> Void) async throws {
+        let fm = FileManager.default
+        var have = (try? fm.attributesOfItem(atPath: localURL.path)[.size] as? Int64) ?? 0
+        if have > totalSize { try? fm.removeItem(at: localURL); have = 0 }
+        if have == 0 {
+            try? fm.removeItem(at: localURL)
+            return try await download(path, to: localURL, expectedSize: totalSize, onProgress: onProgress)
+        }
+        guard have < totalSize else { return onProgress(1) }
+        let handle = try FileHandle(forWritingTo: localURL)
+        defer { try? handle.close() }
+        try handle.seekToEnd()
+        let offset = have, localPath = localURL.path
+        try await Self.withPolling(total: totalSize, onProgress: onProgress, size: {
+            (try? FileManager.default.attributesOfItem(atPath: localPath)[.size] as? Int64) ?? 0
+        }) { [device] in
+            try await device.execOutAppending("tail -c +\(offset + 1) -- \(ShellText.quote(path))", to: handle)
+        }
+        let final = (try? fm.attributesOfItem(atPath: localURL.path)[.size] as? Int64) ?? 0
+        guard final == totalSize else {
+            throw AdbError.commandFailed(exitCode: -1, output: "續傳下載後大小不符（\(final)／\(totalSize)）")
+        }
+        onProgress(1)
+    }
+
+    /// Mac → 裝置：遠端已有 N 位元組時以 `exec-in cat >>` 從本機第 N 位元組接著寫
+    public func resumeUpload(_ localURL: URL, to path: String, onProgress: @escaping @Sendable (Double) -> Void) async throws {
+        let total = (try FileManager.default.attributesOfItem(atPath: localURL.path)[.size] as? Int64) ?? 0
+        var have = try await stat(path)?.size ?? 0
+        if have > total { try await discard(path); have = 0 }
+        if have == 0 { return try await upload(localURL, to: path, onProgress: onProgress) }
+        guard have < total else { return onProgress(1) }
+        let offset = have
+        try await Self.withPolling(total: total, onProgress: onProgress, size: { [self] in
+            (try? await stat(path)?.size) ?? 0
+        }) { [device] in
+            try await device.execIn("cat >> \(ShellText.quote(path))", fromFile: localURL, offset: offset)
+        }
+        guard try await stat(path)?.size == total else {
+            throw AdbError.commandFailed(exitCode: -1, output: "續傳上傳後大小不符")
+        }
+        onProgress(1)
+    }
+
+    /// 裝置內複製：目的已有 N 位元組時截到 1MiB 邊界，再以 `dd skip/seek conv=notrunc` 接著複製
+    public func resumeCopy(_ path: String, to target: String, totalSize: Int64,
+                           onProgress: @escaping @Sendable (Double) -> Void) async throws {
+        var have = try await stat(target)?.size ?? 0
+        if have > totalSize { try await discard(target); have = 0 }
+        if have == 0 { return try await copy(path, to: target, onProgress: onProgress) }
+        guard have < totalSize else { return onProgress(1) }
+        if let free = try await freeKB(RemotePath.parent(of: target)), (totalSize - have) / 1024 > free {
+            throw AdbError.invalidArgument(String(localized:
+                "Not enough space at the destination: needs \(Self.formatKB((totalSize - have) / 1024)), only \(Self.formatKB(free)) available"))
+        }
+        let block: Int64 = 1 << 20
+        let blocks = have / block
+        let command = "truncate -s \(blocks * block) -- \(q(target)) && "
+            + "dd if=\(q(path)) of=\(q(target)) bs=\(block) skip=\(blocks) seek=\(blocks) conv=notrunc 2>/dev/null"
+        try await Self.withPolling(total: totalSize, onProgress: onProgress, size: { [self] in
+            (try? await stat(target)?.size) ?? 0
+        }) { [device] in
+            _ = try await device.shell(command, check: true, timeout: nil)
+        }
+        onProgress(1)
+    }
+
+    /// 執行 `work`，期間每 0.5 秒以 `size()` 輪詢已完成大小回報進度
+    private static func withPolling(total: Int64, onProgress: @escaping @Sendable (Double) -> Void,
+                                    size: @escaping @Sendable () async -> Int64,
+                                    _ work: @escaping @Sendable () async throws -> Void) async throws {
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask { try await work() }
+            if total > 0 {
+                group.addTask {
+                    while !Task.isCancelled {
+                        try await Task.sleep(for: .milliseconds(500))
+                        onProgress(min(1, Double(await size()) / Double(total)))
+                    }
+                }
+            }
+            try await group.next()   // 輪詢迴圈不會自己結束，先完成的一定是 work
+            group.cancelAll()
+        }
     }
 
     /// `df -k` 的可用 KB 數（表頭下一行的第 4 欄）；解析失敗時為 nil，不阻擋移動

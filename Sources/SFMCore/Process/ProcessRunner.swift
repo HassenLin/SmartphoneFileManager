@@ -91,15 +91,18 @@ public enum ProcessRunner {
     ///   - timeout: `nil` 表示不逾時（檔案傳輸用）；逾時丟 `AdbError.timedOut`。
     ///   - standardOutput: 指定時 stdout 直接寫進該檔案（例如 `screencap` 的 PNG），
     ///     回傳的 `data` 只剩 stderr。
+    ///   - standardInput: 指定時以該檔案（目前讀取位置起）作為 stdin（`adb exec-in` 續傳上傳用）。
     public static func run(
         _ executable: String,
         _ arguments: [String],
         timeout: Duration? = .seconds(30),
         environment: [String: String]? = nil,
-        standardOutput: FileHandle? = nil
+        standardOutput: FileHandle? = nil,
+        standardInput: FileHandle? = nil
     ) async throws -> ProcessOutput {
         let handle = makeHandle(executable, arguments, environment: environment)
         if let standardOutput { handle.process.standardOutput = standardOutput }
+        if let standardInput { handle.process.standardInput = standardInput }
         log.debug("exec: \(executable, privacy: .public) \(arguments.joined(separator: " "), privacy: .public)")
 
         let output: ProcessOutput = try await withTaskCancellationHandler {

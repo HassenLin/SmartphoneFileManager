@@ -27,7 +27,7 @@ public struct MTPFileSource: FileSource {
 
     public var id: SourceID { .mtp(session.serial) }
     public var homePath: String { "/" }
-    public var capabilities: SourceCapabilities { SourceCapabilities(nativeCopy: true) }
+    public var capabilities: SourceCapabilities { SourceCapabilities(nativeCopy: true, resumable: true) }
 
     /// 裝置端複製／跨儲存空間移動的大小上限（見型別說明）
     static let deviceSideCopyLimit: Int64 = 256 << 20
@@ -327,5 +327,104 @@ public struct MTPFileSource: FileSource {
             fm.fileExists(atPath: childURL.path, isDirectory: &childIsFolder)
             try upload(childURL, isFolder: childIsFolder.boolValue, name: child, into: created, in: session, progress: progress)
         }
+    }
+
+    // MARK: 工作佇列（續傳）
+
+    /// 續傳的分段大小：每段一個 MTP 交易，段與段之間檢查取消
+    static let partialChunk: UInt32 = 4 << 20
+
+    public func stat(_ path: String) async throws -> FileStat? {
+        try await session.perform { session, _ in
+            guard let object = try? Self.resolve(path, in: session) else {
+                return RemotePath.normalize(path) == "/" ? FileStat(size: 0, modified: nil, isDirectory: true) : nil
+            }
+            return FileStat(size: object.isFolder ? 0 : object.size, modified: object.modified, isDirectory: object.isFolder)
+        }
+    }
+
+    /// 同一儲存空間內 Move Object 只改父物件，瞬間完成
+    public func moveIsInstant(_ path: String, to target: String) async -> Bool {
+        (try? await session.perform { session, _ in
+            let object = try Self.realObject(path, in: session)
+            let folder = try Self.destinationFolder(target, in: session)
+            return object.storageID == folder.storageID
+        }) ?? false
+    }
+
+    /// 裝置 → Mac：本機已有部分內容且裝置支援 Get Partial Object 時，從本機大小接著分段讀取
+    public func resumeDownload(_ path: String, to localURL: URL, totalSize: Int64,
+                               onProgress: @escaping @Sendable (Double) -> Void) async throws {
+        let fm = FileManager.default
+        let have = (try? fm.attributesOfItem(atPath: localURL.path)[.size] as? Int64) ?? 0
+        if have > 0, have == totalSize { return onProgress(1) }   // 已完整
+        guard have > 0, have < totalSize else {                    // 沒有部分內容，或比來源大（無效）
+            try? fm.removeItem(at: localURL)
+            return try await download(path, to: localURL, expectedSize: totalSize, onProgress: onProgress)
+        }
+        let progress = MTPProgress(onProgress)
+        let localPath = localURL.path
+        let resumed: Bool = try await withTaskCancellationHandler {
+            try await session.perform { session, _ in
+                guard session.supports(LIBMTP_DEVICECAP_GetPartialObject) else { return false }
+                let object = try Self.realObject(path, in: session)
+                let writer = try FileHandle(forWritingTo: URL(fileURLWithPath: localPath))
+                defer { try? writer.close() }
+                var offset = UInt64(have)
+                try writer.seek(toOffset: offset)
+                while offset < UInt64(object.size) {
+                    if progress.cancelled { throw CancellationError() }
+                    let chunk = try session.readPartial(object.id, offset: offset, maxBytes: Self.partialChunk)
+                    guard !chunk.isEmpty else { break }
+                    try writer.write(contentsOf: chunk)
+                    offset += UInt64(chunk.count)
+                    progress.report(Double(offset) / Double(max(object.size, 1)))
+                }
+                return true
+            }
+        } onCancel: {
+            progress.cancel()
+        }
+        if !resumed {
+            try? fm.removeItem(at: localURL)
+            try await download(path, to: localURL, expectedSize: totalSize, onProgress: onProgress)
+        }
+        onProgress(1)
+    }
+
+    /// Mac → 裝置：遠端已有部分內容且裝置支援編輯物件（Android）時，從遠端大小接著分段寫入
+    public func resumeUpload(_ localURL: URL, to path: String, onProgress: @escaping @Sendable (Double) -> Void) async throws {
+        let total = (try FileManager.default.attributesOfItem(atPath: localURL.path)[.size] as? Int64) ?? 0
+        let progress = MTPProgress(onProgress)
+        let localPath = localURL.path
+        let resumed: Bool = try await withTaskCancellationHandler {
+            try await session.perform { session, _ in
+                guard let object = try? Self.realObject(path, in: session), !object.isFolder,
+                      object.size > 0, object.size < total,
+                      session.supports(LIBMTP_DEVICECAP_EditObjects) else { return false }
+                let reader = try FileHandle(forReadingFrom: URL(fileURLWithPath: localPath))
+                defer { try? reader.close() }
+                var offset = UInt64(object.size)
+                try reader.seek(toOffset: offset)
+                try session.beginEdit(object.id)
+                defer { try? session.endEdit(object.id) }
+                while offset < UInt64(total) {
+                    if progress.cancelled { throw CancellationError() }
+                    guard let chunk = try reader.read(upToCount: Int(Self.partialChunk)), !chunk.isEmpty else { break }
+                    try session.writePartial(object.id, offset: offset, data: chunk)
+                    offset += UInt64(chunk.count)
+                    progress.report(Double(offset) / Double(max(total, 1)))
+                }
+                Self.invalidate(path, in: session)
+                return true
+            }
+        } onCancel: {
+            progress.cancel()
+        }
+        if !resumed {
+            // upload 會先刪除同名項目再整份傳送
+            try await upload(localURL, to: path, onProgress: onProgress)
+        }
+        onProgress(1)
     }
 }
