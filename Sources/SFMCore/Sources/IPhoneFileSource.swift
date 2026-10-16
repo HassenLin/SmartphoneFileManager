@@ -135,6 +135,7 @@ public struct IPhoneFileSource: FileSource {
     }
 
     /// 在某位置執行指令：自動帶入 `--documents` 與實際路徑
+    @discardableResult
     private func run(_ command: String, _ location: Location, _ extra: [String] = [], flags: [String] = [],
                      timeout: Duration? = .seconds(30)) async throws -> [String] {
         switch location {
@@ -230,7 +231,7 @@ public struct IPhoneFileSource: FileSource {
         try await run("mkdir", location)
     }
 
-    public func move(_ path: String, to target: String) async throws {
+    public func move(_ path: String, to target: String, onProgress: @escaping @Sendable (Double) -> Void) async throws {
         let from = Self.resolve(path), to = Self.resolve(target)
         guard from.isReal, to.isReal, !from.isProtected else { throw Self.virtualFolderError }
         if from.sameService(as: to) {
@@ -246,12 +247,15 @@ public struct IPhoneFileSource: FileSource {
         try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: staging) }
         let local = staging.appendingPathComponent(RemotePath.name(of: path))
-        try await download(path, to: local, expectedSize: nil) { _ in }
-        try await upload(local, to: target) { _ in }
+        // 單檔才知道大小（資料夾的下載進度本來就不確定）；前半段下載、後半段上傳
+        let size = try? await list(RemotePath.parent(of: path), includeHidden: true)
+            .first { $0.path == RemotePath.normalize(path) && !$0.isDirectory }?.size
+        try await download(path, to: local, expectedSize: size) { onProgress($0 * 0.5) }
+        try await upload(local, to: target) { onProgress(0.5 + $0 * 0.5) }
         try await delete(path)
     }
 
-    public func copy(_ path: String, to target: String) async throws {
+    public func copy(_ path: String, to target: String, onProgress: @escaping @Sendable (Double) -> Void) async throws {
         throw AdbError.invalidArgument("AFC has no copy; FileTransfer stages through the Mac")
     }
 

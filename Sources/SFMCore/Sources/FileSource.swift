@@ -54,10 +54,11 @@ public protocol FileSource: Sendable {
     func isDirectory(_ path: String) async throws -> Bool
     func exists(_ path: String) async throws -> Bool
     func makeDirectory(at path: String) async throws
-    /// 同來源內移動／改名
-    func move(_ path: String, to target: String) async throws
-    /// 同來源內複製（`capabilities.nativeCopy == false` 時不會被呼叫）
-    func copy(_ path: String, to target: String) async throws
+    /// 同來源內移動／改名。瞬間完成的 rename 不必回報進度；實際上要搬資料的情況
+    /// （Android 內部儲存 ⇄ SD 卡、iPhone 媒體區 ⇄ App）應回報 0…1
+    func move(_ path: String, to target: String, onProgress: @escaping @Sendable (Double) -> Void) async throws
+    /// 同來源內原生複製（不經 Mac），回報 0…1（`capabilities.nativeCopy == false` 時不會被呼叫）
+    func copy(_ path: String, to target: String, onProgress: @escaping @Sendable (Double) -> Void) async throws
     /// 使用者刪除（Mac 為移到垃圾桶；其他來源為永久刪除，含資料夾內容）
     func delete(_ path: String) async throws
     /// 清除傳輸失敗／取消留下的不完整檔案（一律永久刪除）
@@ -71,6 +72,17 @@ public protocol FileSource: Sendable {
 
 public extension FileSource {
     func discard(_ path: String) async throws { try await delete(path) }
+
+    /// 不需要進度的複製
+    func copy(_ path: String, to target: String) async throws {
+        try await copy(path, to: target) { _ in }
+    }
+
+    /// 不需要進度的移動（改名）
+    func move(_ path: String, to target: String) async throws {
+        try await move(path, to: target) { _ in }
+    }
+
 
     /// 寫入新檔內容（新增檔案、編輯器存檔）：先寫 Mac 暫存檔再 upload
     func write(_ data: Data, to path: String) async throws {

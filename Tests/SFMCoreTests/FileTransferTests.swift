@@ -35,13 +35,13 @@ struct FakeSource: FileSource {
     func exists(_ path: String) async throws -> Bool { store.with { $0.directories.contains(path) || $0.files[path] != nil } }
     func makeDirectory(at path: String) async throws { store.with { _ = $0.directories.insert(path) } }
 
-    func move(_ path: String, to target: String) async throws {
+    func move(_ path: String, to target: String, onProgress: @escaping @Sendable (Double) -> Void) async throws {
         store.with { s in
             s.log.append("mv \(path) \(target)")
             Self.rebase(s, from: path, to: target, keep: false)
         }
     }
-    func copy(_ path: String, to target: String) async throws {
+    func copy(_ path: String, to target: String, onProgress: @escaping @Sendable (Double) -> Void) async throws {
         store.with { s in
             s.log.append("cp \(path) \(target)")
             Self.rebase(s, from: path, to: target, keep: true)

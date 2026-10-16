@@ -95,4 +95,62 @@ struct LiveDeviceTests {
         #expect(try await !iphone.exists(iphoneDir))
         #expect(try await !android.exists(androidDir))
     }
+
+    /// Android 同裝置 cp，以及內部儲存 → 實體 SD 卡（跨檔案系統的 mv 要整份複製），都必須回報中間進度。
+    /// 沒插 SD 卡（`/storage/XXXX-XXXX`）時略過。
+    @Test func androidNativeCopyAndMoveReportProgress() async throws {
+        let vendored = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../vendor/adb").standardized.path
+        let adb = AdbClient(executable: AdbLocator.systemPath() ?? vendored)
+        let serial = try #require(try await adb.devices().first(where: \.isReady)?.serial, "需要已授權的 Android 裝置")
+        let android = AndroidFileSource(device: adb.device(serial))
+        guard let card = try await android.list("/storage", includeHidden: false)
+            .first(where: { $0.isDirectory && $0.name.wholeMatch(of: /[0-9A-F]{4}-[0-9A-F]{4}/) != nil }) else { return }
+
+        let tag = "afm-live-test-\(UUID().uuidString.prefix(8))"
+        let source = "/sdcard/Download/\(tag).bin"
+        let cardDir = "\(card.path)/\(tag)"
+        let target = "\(cardDir)/\(tag).bin"
+        _ = try await adb.device(serial).shell("dd if=/dev/zero of=\(source) bs=1048576 count=256 2>/dev/null", check: true, timeout: nil)
+        try await android.makeDirectory(at: cardDir)
+
+        // 同裝置原生 cp（不經 Mac）也要有中間進度。複製到 SD 卡：內部儲存 256MB 的 cp 不到 0.5 秒，
+        // 比第一次輪詢還快，量不到中間值
+        let copyTarget = "\(cardDir)/\(tag)-copy.bin"
+        let copyReports = Locked<[Double]>([])
+        do {
+            try await android.copy(source, to: copyTarget) { fraction in copyReports.with { $0.append(fraction) } }
+            #expect(try await android.exists(copyTarget))
+            let values = copyReports.with { $0 }
+            #expect(values.last == 1)
+            #expect(values.contains { $0 > 0 && $0 < 1 }, "cp 應有中間進度：\(values)")
+        } catch {
+            Issue.record(error)
+        }
+        try? await android.delete(copyTarget)
+
+        let reports = Locked<[Double]>([])
+        do {
+            try await android.move(source, to: target) { fraction in reports.with { $0.append(fraction) } }
+            #expect(try await android.exists(target))
+            #expect(try await !android.exists(source))
+            let values = reports.with { $0 }
+            #expect(values.last == 1)
+            #expect(values.contains { $0 > 0 && $0 < 1 }, "跨檔案系統移動應有中間進度：\(values)")
+        } catch {
+            Issue.record(error)
+        }
+        try? await android.delete(source)
+        try await android.delete(cardDir)
+    }
+}
+
+/// 進度回呼來自背景 Task，收集時加鎖
+final class Locked<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Value
+    init(_ value: Value) { self.value = value }
+    func with<T>(_ body: (inout Value) -> T) -> T {
+        lock.lock(); defer { lock.unlock() }
+        return body(&value)
+    }
 }

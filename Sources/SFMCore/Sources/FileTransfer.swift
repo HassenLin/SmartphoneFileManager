@@ -5,11 +5,13 @@ import Foundation
 /// 路徑選擇（每個項目）：
 /// | 情況 | 做法 |
 /// |---|---|
-/// | 同一來源、移動 | `source.move`（mv，瞬間完成） |
-/// | 同一來源、複製、支援原生複製 | `source.copy`（cp -r） |
+/// | 同一來源、移動 | `source.move`（mv；Android 跨檔案系統時有進度） |
+/// | 同一來源、複製、支援原生複製 | `source.copy`（cp -r，不經 Mac，有進度） |
 /// | 來源是 Mac | `destination.upload` |
 /// | 目的是 Mac | `source.download` |
 /// | 其他（Android ⇄ iPhone、Android A ⇄ B、iPhone 內複製） | 下載到 Mac 暫存區 → 上傳 → 清除暫存 |
+///
+/// iPhone 內複製無法避免經 Mac：AFC 協定只有 列目錄／建立／刪除／改名／讀／寫，沒有 copy。
 ///
 /// 跨來源的「移動」= 複製成功後才刪除來源項目（失敗則保留來源，不會兩頭落空）。
 /// 目的地同名時自動改名（`a 2.txt`），不覆寫；同資料夾內的移動視為不動作。
@@ -111,11 +113,11 @@ public enum FileTransfer {
                             progress: @escaping @Sendable (Double) -> Void) async throws {
         if sameSource {
             if move {
-                try await source.move(item.path, to: target)
+                try await source.move(item.path, to: target, onProgress: progress)
                 return
             }
             if source.capabilities.nativeCopy {
-                try await source.copy(item.path, to: target)
+                try await source.copy(item.path, to: target, onProgress: progress)
                 return
             }
         }

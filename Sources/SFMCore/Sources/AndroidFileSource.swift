@@ -53,13 +53,75 @@ public struct AndroidFileSource: FileSource {
         _ = try await device.shell("mkdir -p -- \(q(path))", check: true)
     }
 
-    public func move(_ path: String, to target: String) async throws {
-        _ = try await device.shell("mv -- \(q(path)) \(q(target))", check: true, timeout: nil)
+    /// 同一檔案系統內 `mv` 只是 rename，瞬間完成。
+    /// 跨檔案系統（內部儲存 `/storage/emulated` ⇄ SD 卡 `/storage/XXXX-XXXX`）時 `mv` 會整份複製再刪除，
+    /// 可能要好幾分鐘，此時改走 `runTracked`（空間預檢 + 進度）。
+    public func move(_ path: String, to target: String, onProgress: @escaping @Sendable (Double) -> Void) async throws {
+        let mv = "mv -- \(q(path)) \(q(target))"
+        // st_dev 不同 = 不同檔案系統；-L 讓 /sdcard 這類符號連結解析到實際掛載點
+        let devices = try await device.shell("stat -L -c %d -- \(q(path)) \(q(RemotePath.parent(of: target))) 2>/dev/null")
+            .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        guard devices.count == 2, devices[0] != devices[1] else {
+            _ = try await device.shell(mv, check: true, timeout: nil)
+            return
+        }
+        try await runTracked(mv, source: path, target: target, onProgress: onProgress)
     }
 
-    public func copy(_ path: String, to target: String) async throws {
-        _ = try await device.shell("cp -r -- \(q(path)) \(q(target))", check: true, timeout: nil)
+    /// 裝置內原生 `cp -r`（不經 Mac），一律有進度與空間預檢
+    public func copy(_ path: String, to target: String, onProgress: @escaping @Sendable (Double) -> Void) async throws {
+        try await runTracked("cp -r -- \(q(path)) \(q(target))", source: path, target: target, onProgress: onProgress)
     }
+
+    /// 執行會整份寫出資料的裝置端指令（cp、跨檔案系統 mv）：
+    /// 1. `du -sk` 取來源大小，`df -k` 確認目的地放得下——否則指令會在寫了大半後才失敗
+    ///    （實際案例：20G 檔案搬到只剩 14G 的 SD 卡）；
+    /// 2. 指令執行期間每 0.5 秒 `du -sk` 目的端回報進度（cp／mv 都直接寫到目的路徑）。
+    private func runTracked(_ command: String, source: String, target: String,
+                            onProgress: @escaping @Sendable (Double) -> Void) async throws {
+        let total = try await diskUsageKB(source)
+        if let total, let free = try await freeKB(RemotePath.parent(of: target)), total > free {
+            throw AdbError.invalidArgument(String(localized:
+                "Not enough space at the destination: needs \(Self.formatKB(total)), only \(Self.formatKB(free)) available"))
+        }
+        let device = self.device
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask { _ = try await device.shell(command, check: true, timeout: nil) }
+            if let total, total > 0 {
+                group.addTask {
+                    while !Task.isCancelled {
+                        try await Task.sleep(for: .milliseconds(500))
+                        // 輪詢失敗不影響指令本身，略過這一輪
+                        if let done = try? await self.diskUsageKB(target) {
+                            onProgress(min(1, Double(done) / Double(total)))
+                        }
+                    }
+                }
+            }
+            try await group.next()   // 輪詢迴圈不會自己結束，先完成的一定是指令
+            group.cancelAll()
+        }
+        onProgress(1)
+    }
+
+    /// `df -k` 的可用 KB 數（表頭下一行的第 4 欄）；解析失敗時為 nil，不阻擋移動
+    private func freeKB(_ directory: String) async throws -> Int64? {
+        let lines = try await device.shell("df -k -- \(q(directory)) 2>/dev/null", timeout: .seconds(10))
+        guard lines.count >= 2 else { return nil }
+        let fields = lines[lines.count - 1].split(whereSeparator: \.isWhitespace)
+        return fields.count >= 4 ? Int64(fields[3]) : nil
+    }
+
+    private static func formatKB(_ kb: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: kb * 1024, countStyle: .file)
+    }
+
+    /// `du -sk` 的 KB 數；路徑不存在（目的端尚未建立）時為 nil
+    private func diskUsageKB(_ path: String) async throws -> Int64? {
+        let line = try await device.shell("du -sk -- \(q(path)) 2>/dev/null", timeout: .seconds(30)).first
+        return line?.split(whereSeparator: { $0 == "\t" || $0 == " " }).first.flatMap { Int64($0) }
+    }
+
 
     public func delete(_ path: String) async throws {
         guard RemotePath.normalize(path) != "/" else { throw AdbError.invalidArgument("Refusing to delete /") }
