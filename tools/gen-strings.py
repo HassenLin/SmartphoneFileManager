@@ -9,16 +9,36 @@
 可加 --check <keys.json> 比對編譯器擷取的鍵，列出尚未翻譯者。
 用法：python3 tools/gen-strings.py [--check keys.json]
 """
-import json, os, subprocess, sys
+import json, os, re, subprocess, sys
 
 root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 subprocess.run(["swift", os.path.join(root, "tools/hant2hans.swift")], check=True)
+
+# 格式參數：%lld、%@、%2$@…（翻譯若調換順序，必須寫位置編號，否則執行時型別錯位會當機，
+# 例如 "%@" 拿到整數被當成物件指標讀取 → EXC_BAD_ACCESS）
+SPEC = re.compile(r"%(?:(\d+)\$)?(\.\d+)?(lld|llu|ld|lu|d|u|f|@)")
+
+def specs(s):
+    """回傳 [(參數位置, 型別)]；未寫位置編號者依出現順序遞增"""
+    out, n = [], 0
+    for m in SPEC.finditer(s):
+        n += 1
+        out.append((int(m.group(1)) if m.group(1) else n, m.group(3)))
+    return out
+
+def check_specs(lang, table):
+    bad = [k for k, v in table.items() if sorted(specs(k)) != sorted(specs(v))]
+    for k in bad:
+        print(f"{lang} 格式參數不符：{k!r} → {table[k]!r}", file=sys.stderr)
+    if bad:
+        sys.exit(1)
 
 def esc(s):
     return s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
 
 for lang in ["zh-Hant", "zh-Hans"]:
     table = json.load(open(os.path.join(root, f"tools/{lang}.json"), encoding="utf-8"))
+    check_specs(lang, table)
     out = os.path.join(root, f"Localization/{lang}.lproj/Localizable.strings")
     os.makedirs(os.path.dirname(out), exist_ok=True)
     with open(out, "w", encoding="utf-8") as f:

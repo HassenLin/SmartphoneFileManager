@@ -1,5 +1,10 @@
 # LOG
 
+- 2026-10-16｜**修正：多選刪除確認視窗當機（中文語系）**
+  - 「Delete %lld items from %@?」的翻譯調換了參數順序卻未寫位置編號（`要從 %@ 刪除 %lld…`），
+    `%@` 拿到整數（項目數）被當物件指標讀取 → `EXC_BAD_ACCESS`。改為 `%2$@`／`%1$lld`。
+  - `tools/gen-strings.py` 新增格式參數檢查：翻譯的參數位置／型別與原文不符即中止產生。
+
 - 2026-10-16｜**同一裝置拖放改為移動**
   - 原本拖放一律為拷貝（`handleDrop` 寫死 `move: false`），左右窗格同一台 iPhone 互拖時會經 Mac 讀出再寫回。
     改為與 Finder 相同：同一來源預設移動（`FileTransfer` → `source.move`，原生 mv），按住 Option 為拷貝；

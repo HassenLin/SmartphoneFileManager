@@ -100,7 +100,7 @@
   "Dead" : "损坏",
   "Default sort order" : "默认排序",
   "Delete" : "删除",
-  "Delete %lld items from %@?" : "要从 %@ 删除 %lld 个项目吗？",
+  "Delete %lld items from %@?" : "要从 %2$@ 删除 %1$lld 个项目吗？",
   "Delete %lld items from the device?" : "要从设备删除 %lld 个项目吗？",
   "Delete Bookmark" : "删除书签",
   "Delete “%@” from %@?" : "要从 %2$@ 删除“%1$@”吗？",

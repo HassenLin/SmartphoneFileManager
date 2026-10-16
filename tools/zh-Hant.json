@@ -100,7 +100,7 @@
 "Dead": "損壞",
 "Default sort order": "預設排序",
 "Delete": "刪除",
-"Delete %lld items from %@?": "要從 %@ 刪除 %lld 個項目嗎？",
+"Delete %lld items from %@?": "要從 %2$@ 刪除 %1$lld 個項目嗎？",
 "Delete %lld items from the device?": "要從裝置刪除 %lld 個項目嗎？",
 "Delete Bookmark": "刪除書籤",
 "Delete “%@” from %@?": "要從 %2$@ 刪除「%1$@」嗎？",
