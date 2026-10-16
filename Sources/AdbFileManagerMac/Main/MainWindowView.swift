@@ -13,6 +13,7 @@ struct MainWindowView: View {
             }
             RemotePaneView(app: app)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay { ToastOverlay(center: app.toasts) }
         .toolbar { toolbar }
         .navigationTitle("ADB File Manager")

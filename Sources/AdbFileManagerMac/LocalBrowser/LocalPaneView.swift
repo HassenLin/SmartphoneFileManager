@@ -15,12 +15,14 @@ struct LocalPaneView: View {
             header
             Divider()
             content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .modifier(DropHighlight(active: dropTargeted))
                 .onDrop(of: [.fileURL, .remoteFile], isTargeted: $dropTargeted) { app.handleLocalDrop($0) }
             Divider()
             statusBar
         }
-        .frame(minWidth: 300)
+        // HSplitView 不會自動把子視圖撐滿高度，必須明確給 maxHeight
+        .frame(minWidth: 300, maxWidth: .infinity, maxHeight: .infinity)
         .onAppear { model.reload() }
     }
 

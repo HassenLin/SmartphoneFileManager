@@ -14,12 +14,14 @@ struct RemotePaneView: View {
             header
             Divider()
             content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .modifier(DropHighlight(active: dropTargeted))
                 .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { app.handleRemoteDrop($0) }
             Divider()
             statusBar
         }
-        .frame(minWidth: 420)
+        // HSplitView 不會自動把子視圖撐滿高度，必須明確給 maxHeight
+        .frame(minWidth: 420, maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: 標題列
