@@ -70,9 +70,7 @@ public final class TransferQueue {
         var loaded = store.load()
         for index in loaded.indices where !loaded[index].state.isFinished {
             loaded[index].state = .paused
-            for node in loaded[index].allNodes where node.state == .running {
-                loaded[index].updateNode(node.id) { $0.state = $0.operation == .transferFile ? .partial : .pending }
-            }
+            Self.settleRunningNodes(&loaded[index])
         }
         jobs = loaded
     }
@@ -211,6 +209,7 @@ public final class TransferQueue {
                 finishStop(id)
             } else {
                 jobs[index].state = .paused
+                Self.settleRunningNodes(&jobs[index])
                 save()
             }
         } else {
@@ -286,6 +285,14 @@ public final class TransferQueue {
         jobs[index].state = .waitingForUser
         conflicts.append(conflict)
         return await withCheckedContinuation { answers[conflict.id] = $0 }
+    }
+
+    /// 中斷（暫停／關閉 app）後仍標為 running 的節點：檔案轉 partial（繼續時直接續傳），
+    /// 資料夾等其他節點轉回 pending——否則暫停的工作裡資料夾仍顯示轉圈，看起來像還在傳
+    private static func settleRunningNodes(_ job: inout TransferJob) {
+        for node in job.allNodes where node.state == .running {
+            job.updateNode(node.id) { $0.state = $0.operation == .transferFile ? .partial : .pending }
+        }
     }
 
     // MARK: 工具

@@ -196,6 +196,9 @@ struct TransferQueueTests {
         queue.pause(id)
         try await wait { queue.job(id)?.state == .paused }
 
+        // 暫停後沒有節點停留在 running（資料夾不會一直顯示轉圈）
+        #expect(!(queue.job(id)?.allNodes.contains { $0.state == .running } ?? true))
+
         // 「重開 app」：從同一個保存位置建立新佇列，工作仍是暫停、已完成的節點保留
         let relaunched = makeQueue([android, slow])
         let restored = try #require(relaunched.job(id))
