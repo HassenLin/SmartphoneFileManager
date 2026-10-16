@@ -9,7 +9,7 @@
   repo 不收錄 adb 二進位檔（Google SDK 授權條款），見 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)
 - **MTP**（必要相依 `brew install libmtp`）：沒開 USB 偵錯的 Android、電子書閱讀器等 MTP 裝置；有 adb 的 Android 也可另選 MTP。
   根目錄列出各儲存空間（內部、SD 卡）；同儲存空間移動與小檔複製由裝置端完成，大檔／資料夾經 Mac 中繼（MTP 裝置端複製無進度且會逾時）
-- **iPhone**：透過 libimobiledevice（`brew install libimobiledevice ideviceinstaller`）。根目錄分兩個虛擬資料夾：
+- **iPhone**：USB 或 **Wi-Fi**（先以 USB 接一次、在 Finder 開啟「在 Wi-Fi 上時顯示此 iPhone」，之後同網路即可；USB 與 Wi-Fi 同時存在時用 USB）。透過 libimobiledevice（`brew install libimobiledevice ideviceinstaller`）。根目錄分兩個虛擬資料夾：
   `Media`（DCIM、Downloads、Books…）與 `Apps`（開啟檔案分享的 App 及其 Documents，等同 Finder 的「檔案」分頁）
 - **發佈**：自用、ad-hoc 簽章、App Sandbox 關閉；**語系**：English／繁體中文／简体中文（跟隨系統語言）
 - **安裝導引**：缺 adb、libimobiledevice、scrcpy 時於 app 內顯示步驟、官方下載連結與一鍵安裝指令（輔助說明 → 安裝導引）

@@ -84,6 +84,7 @@
 "Connect the device by USB and choose “File transfer” (MTP) on it." = "以 USB 连接设备，并在设备上选择“文件传输”（MTP）。";
 "Connect the iPhone by USB and unlock it." = "以 USB 连接 iPhone 并解锁。";
 "Connect the iPhone by USB, unlock it and tap “Trust This Computer”." = "请以 USB 连接 iPhone、解锁，并点选“信任这台电脑”。";
+"Connect the iPhone by USB, unlock it and tap “Trust This Computer”. For Wi-Fi: after connecting by USB once, select the iPhone in Finder and turn on “Show this iPhone when on Wi-Fi”; it then appears here whenever it is on the same network." = "以 USB 连接 iPhone、解锁并点选“信任这台电脑”。若要使用 Wi-Fi：先以 USB 连接一次，在 Finder 选取此 iPhone，开启“在 Wi-Fi 上时显示此 iPhone”；之后只要在同一网络就会出现在这里。";
 "Copied %lld item(s)" = "已复制 %lld 个项目";
 "Copied %lld item(s) to %@" = "已复制 %lld 个项目到“%@”";
 "Copied %lld item(s) to device" = "已复制 %lld 个项目到设备";

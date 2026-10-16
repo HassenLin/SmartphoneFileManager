@@ -142,7 +142,8 @@ final class AppModel {
                                         symbol: "candybarphone", enabled: device.isReady))
         }
         for phone in devices.iphones {
-            options.append(SourceOption(id: .iphone(phone.udid), title: phone.name, symbol: "iphone", enabled: true))
+            options.append(SourceOption(id: .iphone(phone.udid), title: phone.network ? "\(phone.name) (Wi-Fi)" : phone.name,
+                                        symbol: phone.network ? "wifi" : "iphone", enabled: true))
         }
         for device in devices.mtpDevices {
             options.append(SourceOption(id: .mtp(device.serial), title: "\(device.name) (MTP)",
@@ -182,9 +183,9 @@ final class AppModel {
             guard devices.devices.contains(where: { $0.serial == id.deviceID && $0.isReady }) else { return nil }
             return AndroidFileSource(device: AdbClient.current.device(id.deviceID))
         case .iphone:
-            guard devices.iphones.contains(where: { $0.udid == id.deviceID }),
+            guard let phone = devices.iphones.first(where: { $0.udid == id.deviceID }),
                   let tool = IPhoneFileSource.locateTool() else { return nil }
-            return IPhoneFileSource(udid: id.deviceID, executable: tool)
+            return IPhoneFileSource(udid: id.deviceID, executable: tool, network: phone.network)
         case .mtp:
             return MTPDeviceManager.shared.source(serial: id.deviceID)
         }

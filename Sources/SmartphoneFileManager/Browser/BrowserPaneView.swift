@@ -214,7 +214,7 @@ struct BrowserPaneView: View {
                       systemImage: "iphone.slash")
             } description: {
                 Text(app.devices.iphoneToolsInstalled
-                     ? String(localized: "Connect the iPhone by USB, unlock it and tap “Trust This Computer”.")
+                     ? String(localized: "Connect the iPhone by USB, unlock it and tap “Trust This Computer”. For Wi-Fi: after connecting by USB once, select the iPhone in Finder and turn on “Show this iPhone when on Wi-Fi”; it then appears here whenever it is on the same network.")
                      : String(localized: "iPhone access needs the free libimobiledevice tools."))
             } actions: {
                 Button("Setup Guide…") { app.sheet = .setupGuide(.iphone) }

@@ -1,5 +1,9 @@
 # LOG
 
+- 2026-10-16｜**iPhone Wi-Fi 連線**
+  - 偵測同時列出 USB（`idevice_id -l`）與 Wi-Fi（`idevice_id -n`）裝置，同一支兩邊都有時用 USB；以 UDID 識別，拔掉 USB 後自動改走 Wi-Fi。
+  - Wi-Fi 裝置呼叫 `afcclient`／`ideviceinfo`／`ideviceinstaller` 時加 `-n`；來源選單標示「(Wi-Fi)」；未連線畫面說明在 Finder 開啟 Wi-Fi 顯示。
+
 - 2026-10-16｜**工作佇列（樹狀、暫停／繼續／停止、關閉 app 後可繼續）、衝突對話框、續傳**
   - SFMCore 新增 `Queue/`：`TransferJob`（模型與 FSM：pending／running／waitingForUser／paused／completed／failed／stopped）、
     `TransferPlanner`（同裝置同檔案系統移動不展開；其餘展開到檔案）、`TransferExecutor`（逐節點、衝突詢問、續傳、移動逐檔刪來源）、

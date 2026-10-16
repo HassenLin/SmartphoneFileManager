@@ -29,10 +29,19 @@ import Foundation
 public struct IPhoneFileSource: FileSource {
     public let udid: String
     public let executable: String
+    /// 經 Wi-Fi 連線（libimobiledevice 的 `-n`）。前提：iPhone 曾以 USB 配對，且在 Finder 勾選
+    /// 「在 Wi-Fi 上時顯示此 iPhone」、與 Mac 在同一網路。速度比 USB 慢、較易斷線。
+    public let network: Bool
 
-    public init(udid: String, executable: String) {
+    public init(udid: String, executable: String, network: Bool = false) {
         self.udid = udid
         self.executable = executable
+        self.network = network
+    }
+
+    /// 所有 libimobiledevice 工具共用的裝置參數
+    static func deviceArguments(udid: String, network: Bool) -> [String] {
+        ["-u", udid] + (network ? ["-n"] : [])
     }
 
     public var id: SourceID { .iphone(udid) }
@@ -120,7 +129,7 @@ public struct IPhoneFileSource: FileSource {
     /// 執行一個 afcclient 指令；輸出含 `Error:` 即視為失敗
     @discardableResult
     func run(_ arguments: [String], bundle: String? = nil, timeout: Duration? = .seconds(30)) async throws -> [String] {
-        var args = ["-u", udid]
+        var args = Self.deviceArguments(udid: udid, network: network)
         if let bundle { args += ["--documents", bundle] }
         let output = try await ProcessRunner.run(executable, args + ["--"] + arguments, timeout: timeout)
         let lines = output.lines
@@ -160,7 +169,7 @@ public struct IPhoneFileSource: FileSource {
                 FileItem(path: "/\(Self.appsFolder)", name: Self.appsFolder, isDirectory: true, permissions: "dr-xr-xr-x"),
             ]
         case .appsRoot:
-            return try await IPhoneAppCatalog.shared.apps(udid: udid).map { app in
+            return try await IPhoneAppCatalog.shared.apps(udid: udid, network: network).map { app in
                 FileItem(path: "/\(Self.appsFolder)/\(app.bundleID)", name: app.name, isDirectory: true, permissions: "dr-xr-xr-x")
             }
         case .invalid:
@@ -356,13 +365,13 @@ public actor IPhoneAppCatalog {
     public static let shared = IPhoneAppCatalog()
     private var cache: [String: (date: Date, apps: [IPhoneApp])] = [:]
 
-    public func apps(udid: String, refresh: Bool = false) async throws -> [IPhoneApp] {
+    public func apps(udid: String, network: Bool = false, refresh: Bool = false) async throws -> [IPhoneApp] {
         if !refresh, let entry = cache[udid], Date().timeIntervalSince(entry.date) < 120 { return entry.apps }
         guard let tool = AdbLocator.findExecutable("ideviceinstaller") else {
             throw AdbError.executableNotFound(String(localized: "ideviceinstaller (brew install ideviceinstaller) — needed to list iPhone apps"))
         }
-        let output = try await ProcessRunner.run(tool, [
-            "-u", udid, "list", "--all", "--xml",
+        let output = try await ProcessRunner.run(tool, IPhoneFileSource.deviceArguments(udid: udid, network: network) + [
+            "list", "--all", "--xml",
             "-a", "CFBundleIdentifier", "-a", "CFBundleDisplayName", "-a", "CFBundleName", "-a", "UIFileSharingEnabled",
         ], timeout: .seconds(60))
         let apps = try Self.parse(output.data)
@@ -392,31 +401,41 @@ public actor IPhoneAppCatalog {
 public struct IPhoneDeviceInfo: Identifiable, Hashable, Sendable {
     public let udid: String
     public let name: String
+    /// 只有 Wi-Fi 可用（同時有 USB 時優先用 USB，較快且穩定）
+    public let network: Bool
     public var id: String { udid }
 
-    public init(udid: String, name: String) {
+    public init(udid: String, name: String, network: Bool = false) {
         self.udid = udid
         self.name = name
+        self.network = network
     }
 
-    /// 列出 USB 連接的 iPhone；libimobiledevice 未安裝時回傳空陣列
+    /// 列出可用的 iPhone：USB（`idevice_id -l`）與 Wi-Fi（`idevice_id -n`）。
+    /// 同一支同時出現在兩邊時視為 USB；以 UDID 識別，所以拔掉 USB 後窗格自動改走 Wi-Fi、不必重選。
+    /// libimobiledevice 未安裝時回傳空陣列。
     public static func list(knownNames: [String: String] = [:]) async -> [IPhoneDeviceInfo] {
         guard let idevice = AdbLocator.findExecutable("idevice_id") else { return [] }
-        guard let output = try? await ProcessRunner.run(idevice, ["-l"], timeout: .seconds(10)) else { return [] }
-        let udids = output.lines.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        func udids(_ flag: String) async -> [String] {
+            guard let output = try? await ProcessRunner.run(idevice, [flag], timeout: .seconds(10)) else { return [] }
+            return output.lines.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        }
+        let usb = await udids("-l")
+        let wifi = await udids("-n").filter { !usb.contains($0) }
         var result: [IPhoneDeviceInfo] = []
-        for udid in udids {
+        for (udid, network) in usb.map({ ($0, false) }) + wifi.map({ ($0, true) }) {
             if let name = knownNames[udid] {
-                result.append(IPhoneDeviceInfo(udid: udid, name: name))
+                result.append(IPhoneDeviceInfo(udid: udid, name: name, network: network))
                 continue
             }
             var name = "iPhone"
             if let info = AdbLocator.findExecutable("ideviceinfo"),
-               let out = try? await ProcessRunner.run(info, ["-u", udid, "-k", "DeviceName"], timeout: .seconds(10)),
+               let out = try? await ProcessRunner.run(info, IPhoneFileSource.deviceArguments(udid: udid, network: network)
+                                                          + ["-k", "DeviceName"], timeout: .seconds(10)),
                out.exitCode == 0, let first = out.lines.first, !first.isEmpty, !first.hasPrefix("ERROR") {
                 name = first
             }
-            result.append(IPhoneDeviceInfo(udid: udid, name: name))
+            result.append(IPhoneDeviceInfo(udid: udid, name: name, network: network))
         }
         return result
     }
