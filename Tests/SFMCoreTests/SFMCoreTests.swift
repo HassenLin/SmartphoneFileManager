@@ -342,3 +342,17 @@ struct RsyncTests {
         #expect(again == RsyncCommand.Summary())
     }
 }
+
+@Suite("BookmarkLibrary")
+struct BookmarkLibraryTests {
+    @Test func belongsToDevice() {
+        let a = SourceID.android("A"), b = SourceID.android("B"), phone = SourceID.iphone("U")
+        #expect(FolderLocation(source: a, path: "/sdcard").belongs(to: a))
+        #expect(!FolderLocation(source: a, path: "/sdcard").belongs(to: b))
+        // 舊版書籤（任一台 Android）屬於每一台 Android，不屬於 iPhone
+        let legacy = FolderLocation(source: .android(""), path: "/sdcard")
+        #expect(legacy.belongs(to: a) && legacy.belongs(to: b) && !legacy.belongs(to: phone))
+        let project = SyncProject(name: "p", left: FolderLocation(source: .mac, path: "/x"), right: FolderLocation(source: phone, path: "/Media"))
+        #expect(project.involves(.mac) && project.involves(phone) && !project.involves(a))
+    }
+}

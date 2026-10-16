@@ -147,43 +147,44 @@ struct BrowserPaneView: View {
     }
 
     /// 書籤選單（兩種）：資料夾書籤（任何來源）、同步專案（左右一對資料夾）
+    /// 書籤選單（兩種）：資料夾書籤、同步專案（左右一對資料夾）。
+    /// 只列窗格目前裝置的項目（同步專案：任一邊在此裝置）；其他裝置的收在「其他裝置」子選單，
+    /// 未連線裝置的書籤仍可開啟或刪除。
     private var bookmarkMenu: some View {
         let here = app.location(of: side)
         let current = here.flatMap { app.bookmarks.folderBookmark(at: $0) }
+        let device = model.sourceID
+        let folders = app.bookmarks.folders
+        let projects = app.bookmarks.syncProjects
+        let mine = folders.filter { device.map($0.location.belongs(to:)) ?? false }
+        let myProjects = projects.filter { device.map($0.involves) ?? false }
+        let otherFolders = folders.filter { bookmark in !mine.contains { $0.id == bookmark.id } }
+        let otherProjects = projects.filter { project in !myProjects.contains { $0.id == project.id } }
         return Menu {
             if let current {
                 Button("Remove Bookmark for This Folder") { try? app.bookmarks.removeFolder(current) }
             } else {
                 Button("Bookmark This Folder…") { app.sheet = .addBookmark(side) }
             }
-            if !app.bookmarks.folders.isEmpty {
-                Section("Bookmarks") {
-                    ForEach(app.bookmarks.folders) { bookmark in
-                        Menu {
-                            Button("Open \(bookmark.location.path)") { app.open(bookmark.location, in: side) }
-                            Button("Delete Bookmark", role: .destructive) { try? app.bookmarks.removeFolder(bookmark) }
-                        } label: {
-                            Label(bookmark.name, systemImage: app.symbol(for: bookmark.location.source))
-                        } primaryAction: {
-                            app.open(bookmark.location, in: side)
-                        }
-                    }
-                }
+            if !mine.isEmpty {
+                Section("Bookmarks") { ForEach(mine) { folderItem($0) } }
             }
             Section("Sync Projects") {
-                ForEach(app.bookmarks.syncProjects) { project in
-                    Menu {
-                        Button("Open…") { app.openSyncProject(project) }
-                        Button("Delete Sync Project", role: .destructive) { try? app.bookmarks.removeSyncProject(project) }
-                    } label: {
-                        Label(project.name, systemImage: "arrow.triangle.2.circlepath")
-                    } primaryAction: {
-                        app.openSyncProject(project)
-                    }
-                }
+                ForEach(myProjects) { projectItem($0) }
                 Button("New Sync Project…") {
                     app.syncProjectToEdit = nil
                     app.isSyncPopoverPresented = true
+                }
+            }
+            if !otherFolders.isEmpty || !otherProjects.isEmpty {
+                Divider()
+                Menu("Other Devices (\(otherFolders.count + otherProjects.count))") {
+                    if !otherFolders.isEmpty {
+                        Section("Bookmarks") { ForEach(otherFolders) { folderItem($0) } }
+                    }
+                    if !otherProjects.isEmpty {
+                        Section("Sync Projects") { ForEach(otherProjects) { projectItem($0) } }
+                    }
                 }
             }
         } label: {
@@ -192,6 +193,28 @@ struct BrowserPaneView: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .help("Bookmarks and sync projects")
+    }
+
+    private func folderItem(_ bookmark: FolderBookmark) -> some View {
+        Menu {
+            Button("Open \(bookmark.location.path)") { app.open(bookmark.location, in: side) }
+            Button("Delete Bookmark", role: .destructive) { try? app.bookmarks.removeFolder(bookmark) }
+        } label: {
+            Label(bookmark.name, systemImage: app.symbol(for: bookmark.location.source))
+        } primaryAction: {
+            app.open(bookmark.location, in: side)
+        }
+    }
+
+    private func projectItem(_ project: SyncProject) -> some View {
+        Menu {
+            Button("Open…") { app.openSyncProject(project) }
+            Button("Delete Sync Project", role: .destructive) { try? app.bookmarks.removeSyncProject(project) }
+        } label: {
+            Label(project.name, systemImage: "arrow.triangle.2.circlepath")
+        } primaryAction: {
+            app.openSyncProject(project)
+        }
     }
 
     // MARK: 內容

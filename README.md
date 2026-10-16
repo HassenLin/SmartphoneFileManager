@@ -55,7 +55,7 @@
 | 編輯器 | 任一來源的文字檔：語法上色、⌘F／⌥⌘F、undo、編碼偵測與切換、無損存檔 |
 | Android 工具 | 工具列「Android」按鈕彈出視窗：選擇目標裝置；終端機（多分頁）、App 管理、裝置資訊、重開機、截圖、寫入剪貼簿、scrcpy 鏡像、無線配對／連線 |
 | iPhone 工具 | 工具列「iPhone」按鈕彈出視窗：選擇目標 iPhone；裝置資訊（機型、iOS、電池、儲存空間）、重新開機／關機、App 管理（列出、安裝 .ipa、解除安裝）。iOS 17 起 libimobiledevice 無法截圖，故不提供 |
-| 書籤（兩種） | 窗格的書籤選單：**資料夾書籤**（任何來源，含裝置）與**同步專案**（左右一對資料夾＋方向＋選項）；選同步專案會把左右窗格開到該資料夾並開啟同步視窗。存於 `Application Support/SmartphoneFileManager/bookmarks.json`，首次啟動匯入舊版 `~/.adbfilemanager/bookmarks.json` |
+| 書籤（兩種） | 窗格的書籤選單：**資料夾書籤**（任何來源，含裝置）與**同步專案**（左右一對資料夾＋方向＋選項）；只列窗格目前裝置的項目（同步專案：任一邊在此裝置），其他裝置的收在「其他裝置」子選單；選同步專案會把左右窗格開到該資料夾並開啟同步視窗。存於 `Application Support/SmartphoneFileManager/bookmarks.json`，首次啟動匯入舊版 `~/.adbfilemanager/bookmarks.json` |
 | 同步（類似 rsync） | 工具列「同步」：彈出視窗含專案名稱、方向（左 → 右／左 ← 右／左 ↔ 右 雙向）、選項與「取消／儲存／同步」；同步時若選項有變先儲存再執行（加入工作佇列，可暫停／繼續）。**兩邊都是 Mac** 直接執行 rsync（`-a`＋檢查碼、延伸屬性、額外參數）；其他組合用內建引擎，提供來源做得到的選項：刪除多餘、隱藏檔、排除樣式、只比大小、略過已存在。雙向：各以較新的檔案為準、不刪除（Mac ↔ Mac 為兩趟 `rsync -a --update`） |
 | Mac 位置 | Mac 窗格的雲朵按鈕：常用資料夾、iCloud 雲碟、Google Drive／OneDrive／Dropbox 等（`~/Library/CloudStorage`）、外接磁碟 |
 
@@ -71,7 +71,7 @@ git clone <repo> SmartphoneFileManager && cd SmartphoneFileManager
 ## 開發
 
 ```bash
-swift test                                            # 單元測試（63 項，含預設略過的實機測試）
+swift test                                            # 單元測試（64 項，含預設略過的實機測試）
 SFM_LIVE=1 swift test --filter LiveDevice             # 實機整合測試（需 Android + iPhone）
 SFM_LIVE=1 swift test --filter MTPLive                # MTP 實機測試（需 MTP 裝置）
 ./tools/make-app.sh && open .build/SmartphoneFileManager.app
@@ -111,7 +111,7 @@ tools/                        install.sh、make-app.sh、make-icon.swift、AppIc
 
 ## 狀態
 
-- `swift build` 零警告；`swift test` 63/63；實機整合測試（Palma Android + iPhone iOS 27）通過。
+- `swift build` 零警告；`swift test` 64/64；實機整合測試（Palma Android + iPhone iOS 27）通過。
 - 已截圖確認：左 iPhone／右 Android 雙窗格瀏覽。
 - 待手動驗收：UI 上的 ⌘C/⌘X/⌘V、拖放。
 

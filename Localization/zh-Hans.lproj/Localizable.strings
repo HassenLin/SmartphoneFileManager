@@ -302,6 +302,7 @@
 "Option 2 — Install with Homebrew" = "方式二：以 Homebrew 安装";
 "Option 3 — Download Android SDK Platform-Tools" = "方式三：下载 Android SDK Platform-Tools";
 "Or set its path in Settings → Screen Mirroring." = "或在 设置 → 投屏 指定路径。";
+"Other Devices (%lld)" = "其他设备（%lld）";
 "Others" = "其他人";
 "Over voltage" = "过压";
 "Overheat" = "过热";

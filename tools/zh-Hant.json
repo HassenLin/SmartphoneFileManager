@@ -493,5 +493,6 @@
 "Left ↔ Right": "左 ↔ 右",
 "Both sides changed; cannot tell which is newer": "兩邊都有變更，無法判斷哪邊較新",
 "A file and a folder have the same name": "同名的一邊是檔案、一邊是資料夾",
-"Two-way: the newer file wins on each side; nothing is deleted (without a record of the last sync, a deletion looks the same as a new file on the other side).": "雙向：兩邊各以較新的檔案為準；不刪除任何項目（沒有上次同步的紀錄，無法分辨「一邊刪除」與「另一邊新增」）。"
+"Two-way: the newer file wins on each side; nothing is deleted (without a record of the last sync, a deletion looks the same as a new file on the other side).": "雙向：兩邊各以較新的檔案為準；不刪除任何項目（沒有上次同步的紀錄，無法分辨「一邊刪除」與「另一邊新增」）。",
+"Other Devices (%lld)": "其他裝置（%lld）"
 }

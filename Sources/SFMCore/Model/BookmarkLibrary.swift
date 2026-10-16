@@ -13,6 +13,11 @@ public struct FolderLocation: Codable, Hashable, Sendable {
     /// 舊版（Kotlin 版共用檔）的書籤只有路徑、沒有裝置：以空的 Android 序號表示「任一台 Android」，
     /// 開啟時用窗格目前的 Android 或第一台可用的 Android。
     public var isAnyAndroid: Bool { source.kind == .android && source.deviceID.isEmpty }
+
+    /// 是否屬於某個來源（書籤選單依窗格目前的裝置篩選）；舊版「任一台 Android」書籤屬於每一台 Android
+    public func belongs(to id: SourceID) -> Bool {
+        source == id || (isAnyAndroid && id.kind == .android)
+    }
 }
 
 /// 書籤種類一：資料夾書籤
@@ -126,6 +131,9 @@ public struct SyncProject: Codable, Identifiable, Hashable, Sendable {
     }
 
     /// 單向的來源／目的；雙向時為左／右（比對與節點以左 → 右為基準方向）
+    /// 任一邊在此來源上
+    public func involves(_ id: SourceID) -> Bool { left.belongs(to: id) || right.belongs(to: id) }
+
     public var from: FolderLocation { direction == .rightToLeft ? right : left }
     public var to: FolderLocation { direction == .rightToLeft ? left : right }
 }
