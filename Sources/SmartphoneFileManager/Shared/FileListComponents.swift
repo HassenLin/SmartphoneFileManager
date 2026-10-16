@@ -65,6 +65,8 @@ struct PathBar: View {
                                 .padding(.vertical, 2)
                                 .background(index == components.count - 1 ? Color.accentColor.opacity(0.15) : .clear,
                                             in: RoundedRectangle(cornerRadius: 4))
+                                // 右鍵某一段：拷貝到該層為止的路徑
+                                .contextMenu { copyPathButton(component.target) }
                         }
                     }
                 }
@@ -76,9 +78,18 @@ struct PathBar: View {
                     editing = true
                 }
                 .help(fullPath)
+                // 右鍵空白處：拷貝目前資料夾的完整路徑
+                .contextMenu { copyPathButton(fullPath) }
             }
         }
         .frame(height: 24)
+    }
+
+    private func copyPathButton(_ path: String) -> some View {
+        Button("Copy Path") {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(path, forType: .string)
+        }
     }
 }
 

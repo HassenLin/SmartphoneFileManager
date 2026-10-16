@@ -1,5 +1,23 @@
 # LOG
 
+- 2026-10-16｜**移動／複製顯示進度、空間預檢、拖曳誤下載修正、路徑列拷貝路徑**
+  - `FileSource.move` 新增 `onProgress`（另有不帶進度的便利多載供改名使用）。
+    Android：`stat -L -c %d` 判斷跨檔案系統（內部儲存 ⇄ SD 卡，`mv` 實為整份複製），
+    此時 `du -sk` 取來源大小、執行中每 0.5 秒 `du -sk` 目的端回報進度；iPhone 媒體區 ⇄ App 的中繼移動接上下載／上傳進度。
+  - 跨檔案系統移動前以 `df -k` 檢查目的地剩餘空間，不足即報錯不開始
+    （實際案例：20.4G 檔案搬到只剩 14G 的 SD 卡，原本只有不確定進度列，看似當掉）。
+  - 路徑列右鍵「拷貝路徑」：點某一段拷貝到該層，點空白處拷貝目前完整路徑。
+  - 修正：窗格間拖曳裝置上的大檔案時停在藍框。拖到 Finder 用的檔案表示法（下載到 Mac 暫存區）
+    在滑鼠進入另一窗格時就被 SwiftUI 要求，20G 檔案因此開始下載到 `$TMPDIR`。
+    改為滑鼠仍在本 app 視窗上時拒絕提供，窗格間只走自有型別（同裝置 → 原生 mv）。
+  - 複製也有進度：`FileSource.copy` 新增 `onProgress`。Android 同裝置 `cp -r`（不經 Mac）與跨檔案系統 mv
+    共用 `runTracked`（`du`／`df` 空間預檢 + 輪詢目的端大小）；Mac 本機複製輪詢目的端大小（8MB 以上）。
+    iPhone 內複製仍須經 Mac：AFC 沒有 copy 指令。
+  - 啟動時清除上次留下的 `afm-*` 暫存（`afm-open-*` 可能仍被其他 App 開著，超過一天才清）。
+  - 修掉 `IPhoneFileSource.run(_:_:)` 未使用回傳值的既有警告（補 `@discardableResult`）。
+  - 新增實機測試 `androidNativeCopyAndMoveReportProgress`（256MB cp 與 mv 內部儲存 → SD 卡，皆有中間進度；
+    內部儲存內 cp 256MB 僅 0.48 秒，快於輪詢間隔，故測 SD 卡）；`swift test` 41 項通過。
+
 - 2026-10-16｜**欄位標題排序、記住各窗格路徑**
   - 表格原本未綁定 `sortOrder`，點標題不會排序。新增 `FileColumnComparator`（標題 ⇄ `SortType` 轉接，
     排序真相仍是 `BrowserModel.sortType`，與排序選單共用）；「類型」排序沒有對應欄位，標題不顯示箭頭。

@@ -229,6 +229,7 @@
 "No results" = "没有结果";
 "No terminal" = "没有终端";
 "Not charging" = "未充电";
+"Not enough space at the destination: needs %@, only %@ available" = "目标位置空间不足：需要 %1$@，只剩 %2$@";
 "Not found — see Help → Setup Guide" = "找不到——请参阅 帮助 → 安装向导";
 "On the Android phone" = "在 Android 手机上";
 "On the iPhone" = "在 iPhone 上";

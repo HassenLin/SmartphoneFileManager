@@ -326,6 +326,7 @@
 "Take Screenshot": "擷取螢幕畫面",
 "Tap “Trust” on “Trust This Computer?” and enter the passcode.": "在「要信任這部電腦嗎？」點「信任」並輸入密碼。",
 "Target SDK": "Target SDK",
+"Not enough space at the destination: needs %@, only %@ available": "目的地空間不足：需要 %1$@，只剩 %2$@",
 "Target already exists: %@": "目的項目已存在：%@",
 "Temperature": "溫度",
 "Terminal": "終端機",

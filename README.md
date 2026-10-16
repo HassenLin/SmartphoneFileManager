@@ -19,8 +19,8 @@
 | 拷貝／剪下／貼上 | 表格焦點時 ⌘C／⌘X／⌘V；右鍵「拷貝、剪下、貼上、貼到「資料夾」」；對單檔、資料夾、多選都適用。Finder 拷貝的檔案可直接貼到裝置；Mac 項目拷貝後可貼到 Finder |
 | 刪除 | Delete 鍵或右鍵；Mac 為移到垃圾桶，裝置為永久刪除（含資料夾內容），皆會確認 |
 | 窗格互傳 | 右鍵「複製／移動到另一窗格」、拖放（窗格 ⇄ 窗格、Finder ⇄ 窗格）；同 Finder：同一來源拖放為移動（原生 mv），按住 Option 為拷貝，不同來源及 Finder 拖入為拷貝 |
-| 傳輸引擎 | 同來源原生 cp／mv；跨來源經 Mac 暫存區中繼；剪下 = 複製成功後才刪來源；同名自動改名（`a 2.txt`）；進度、可取消、取消時清掉不完整檔案 |
-| 檔案操作 | 新增資料夾/檔案、改名、權限（Android chmod）、遞迴搜尋（Android）、書籤（Android）、排序（點名稱／大小／修改日期欄位標題，或排序選單）、篩選 |
+| 傳輸引擎 | 同來源原生 cp／mv，不經 Mac（cp 與 Android 內部儲存 ⇄ SD 卡等跨檔案系統 mv 會預檢空間並顯示進度；iPhone 的 AFC 沒有 copy，iPhone 內複製仍經 Mac）；跨來源經 Mac 暫存區中繼；剪下 = 複製成功後才刪來源；同名自動改名（`a 2.txt`）；進度、可取消、取消時清掉不完整檔案 |
+| 檔案操作 | 新增資料夾/檔案、改名、權限（Android chmod）、路徑列右鍵拷貝路徑、遞迴搜尋（Android）、書籤（Android）、排序（點名稱／大小／修改日期欄位標題，或排序選單）、篩選 |
 | 編輯器 | 任一來源的文字檔：語法上色、⌘F／⌥⌘F、undo、編碼偵測與切換、無損存檔 |
 | Android 工具 | 終端機（多分頁）、App 管理、裝置資訊、重開機、截圖、寫入剪貼簿、scrcpy 鏡像、無線配對／連線（工具列選擇目標裝置） |
 
@@ -36,7 +36,7 @@ git clone <repo> SmartphoneFileManager && cd SmartphoneFileManager
 ## 開發
 
 ```bash
-swift test                                            # 單元測試（40 項）
+swift test                                            # 單元測試（41 項，含預設略過的實機測試）
 SFM_LIVE=1 swift test --filter LiveDevice             # 實機整合測試（需 Android + iPhone）
 ./tools/make-app.sh && open .build/SmartphoneFileManager.app
 open Package.swift                                    # Xcode 開發／除錯
@@ -65,7 +65,7 @@ tools/                        install.sh、make-app.sh、make-icon.swift、AppIc
 
 ## 狀態
 
-- `swift build` 零警告；`swift test` 40/40；實機整合測試（Palma Android + iPhone iOS 27）通過。
+- `swift build` 零警告；`swift test` 41/41；實機整合測試（Palma Android + iPhone iOS 27）通過。
 - 已截圖確認：左 iPhone／右 Android 雙窗格瀏覽。
 - 待手動驗收：UI 上的 ⌘C/⌘X/⌘V、拖放、拖到 Finder（file promise，best-effort）。
 
