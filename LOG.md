@@ -1,5 +1,9 @@
 # LOG
 
+- 2026-10-16｜**工作區搬家**：`AdbFileManager/` → `SmartphoneFileManager/`
+  （以 ditto 複製，Claude Code session／記憶一併複製；採「先複製、驗證後再刪舊目錄」，不再用改名腳本）。
+  - 驗證：工作樹乾淨、檔案數一致（472，不含 `.build`）；新路徑重建後 `swift test` 40 項通過，`make-app.sh` 組出 app 可啟動。
+
 - 2026-10-16｜**iPhone App 文件、安裝導引、簡體中文**
   - iPhone 改為虛擬樹：`/Media`（AFC 媒體區）＋ `/Apps`（house_arrest，可分享檔案的 App 的 Documents；清單來自 `ideviceinstaller`，快取 2 分鐘）。
     媒體區 ⇄ App、App ⇄ App 之間沒有原生 mv，自動經 Mac 中繼。虛擬層受保護。
