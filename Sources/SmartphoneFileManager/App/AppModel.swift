@@ -139,6 +139,10 @@ final class AppModel {
         for phone in devices.iphones {
             options.append(SourceOption(id: .iphone(phone.udid), title: phone.name, symbol: "iphone", enabled: true))
         }
+        for device in devices.mtpDevices {
+            options.append(SourceOption(id: .mtp(device.serial), title: "\(device.name) (MTP)",
+                                        symbol: Self.mtpSymbol, enabled: true))
+        }
         return options
     }
 
@@ -149,6 +153,7 @@ final class AppModel {
         case .mac: return String(localized: "This Mac")
         case .android: return String(localized: "Android \(id.deviceID) (disconnected)")
         case .iphone: return String(localized: "iPhone (disconnected)")
+        case .mtp: return String(localized: "MTP device (disconnected)")
         }
     }
 
@@ -157,6 +162,7 @@ final class AppModel {
         case .mac: return "laptopcomputer"
         case .android: return "candybarphone"
         case .iphone: return "iphone"
+        case .mtp: return Self.mtpSymbol
         case nil: return "questionmark.folder"
         }
     }
@@ -174,8 +180,12 @@ final class AppModel {
             guard devices.iphones.contains(where: { $0.udid == id.deviceID }),
                   let tool = IPhoneFileSource.locateTool() else { return nil }
             return IPhoneFileSource(udid: id.deviceID, executable: tool)
+        case .mtp:
+            return MTPDeviceManager.shared.source(serial: id.deviceID)
         }
     }
+
+    static let mtpSymbol = "cable.connector"
 
     func selectSource(_ id: SourceID, for side: PaneSide) {
         pane(side).select(id, resolved: resolve(id))

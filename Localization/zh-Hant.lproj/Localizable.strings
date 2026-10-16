@@ -44,6 +44,7 @@
 "Bundled (recommended)" = "內附（建議）";
 "Cancel" = "取消";
 "Cancel running adb commands (⌘.)" = "取消執行中的 adb 指令（⌘.）";
+"Cannot open MTP device %@. Close Android File Transfer, OpenMTP or Image Capture, and choose “File transfer” on the device." = "無法開啟 MTP 裝置 %@。請關閉 Android File Transfer、OpenMTP 或「影像擷取」，並在裝置上選擇「檔案傳輸」。";
 "Cannot open directory: %@" = "無法開啟資料夾：%@";
 "Cannot open file" = "無法開啟檔案";
 "Cannot open folder" = "無法開啟資料夾";
@@ -70,6 +71,7 @@
 "Command timed out: %@" = "指令逾時：%@";
 "Connect" = "連線";
 "Connect by USB and tap “Allow” on the “Allow USB debugging?” prompt (tick “Always allow from this computer”)." = "以 USB 連接，在「允許 USB 偵錯嗎？」提示點「允許」（建議勾選「一律允許這部電腦」）。";
+"Connect the device by USB and choose “File transfer” (MTP) on it." = "以 USB 連接裝置，並在裝置上選擇「檔案傳輸」（MTP）。";
 "Connect the iPhone by USB and unlock it." = "以 USB 連接 iPhone 並解鎖。";
 "Connect the iPhone by USB, unlock it and tap “Trust This Computer”." = "請以 USB 連接 iPhone、解鎖，並點選「信任這部電腦」。";
 "Copied %lld item(s)" = "已複製 %lld 個項目";
@@ -194,6 +196,10 @@
 "Ln %lld, Col %lld" = "第 %lld 行，第 %lld 欄";
 "Loading…" = "載入中…";
 "Local file does not exist: %@" = "本機檔案不存在：%@";
+"MTP access is not set up" = "尚未設定 MTP 存取";
+"MTP access needs the free libmtp library: brew install libmtp" = "MTP 存取需要免費的 libmtp 函式庫：brew install libmtp";
+"MTP device (disconnected)" = "MTP 裝置（未連線）";
+"MTP device not connected" = "MTP 裝置未連線";
 "Mac start folder" = "Mac 起始資料夾";
 "Manufacturer" = "製造商";
 "Max FPS: %@" = "最高 FPS：%@";
@@ -331,6 +337,7 @@
 "Temperature" = "溫度";
 "Terminal" = "終端機";
 "Test" = "測試";
+"The MTP device was disconnected" = "MTP 裝置已中斷連線";
 "The bundled adb is missing from this build. Rebuild with tools/make-app.sh, or use option 2 or 3." = "此版本缺少內附的 adb。請以 tools/make-app.sh 重新建置，或改用方式二、三。";
 "The destination is not available" = "目的地無法使用";
 "The file cannot be decoded as %@." = "此檔案無法以 %@ 解碼。";
@@ -339,6 +346,7 @@
 "This Mac" = "這台 Mac";
 "This app ships with Google's adb. Switch back to it if Settings points somewhere else." = "本 App 內附 Google 的 adb；若設定指向其他位置，可切回內附版本。";
 "This cannot be undone." = "此動作無法復原。";
+"This is a virtual folder and cannot be changed" = "這是虛擬資料夾，無法變更";
 "This is a virtual folder. Open Media or an app folder first." = "這是虛擬資料夾，請先開啟 Media 或某個 App 的資料夾。";
 "Transfer cancelled" = "已取消傳輸";
 "Turn device screen off while mirroring" = "鏡像時關閉裝置螢幕";

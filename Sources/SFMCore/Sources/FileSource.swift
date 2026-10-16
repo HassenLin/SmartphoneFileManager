@@ -1,9 +1,10 @@
 import Foundation
 
-/// 檔案來源的識別。`deviceID` 為 Android serial／iPhone UDID；Mac 為空字串。
+/// 檔案來源的識別。`deviceID` 為 Android serial／iPhone UDID／MTP 序號；Mac 為空字串。
+/// 同一台 Android 可同時以 adb 與 MTP 兩種來源出現（兩者序號不同）。
 /// 兩個窗格可以指向同一個來源（例如同一台 Android 的兩個資料夾）。
 public struct SourceID: Hashable, Sendable, Codable {
-    public enum Kind: String, Sendable, Codable { case mac, android, iphone }
+    public enum Kind: String, Sendable, Codable { case mac, android, iphone, mtp }
 
     public let kind: Kind
     public let deviceID: String
@@ -16,6 +17,7 @@ public struct SourceID: Hashable, Sendable, Codable {
     public static let mac = SourceID(kind: .mac)
     public static func android(_ serial: String) -> SourceID { SourceID(kind: .android, deviceID: serial) }
     public static func iphone(_ udid: String) -> SourceID { SourceID(kind: .iphone, deviceID: udid) }
+    public static func mtp(_ serial: String) -> SourceID { SourceID(kind: .mtp, deviceID: serial) }
 }
 
 /// 來源能力：UI 依此顯示／隱藏功能，而不是到處判斷來源型別
@@ -37,7 +39,7 @@ public struct SourceCapabilities: Sendable {
     }
 }
 
-/// 檔案來源的抽象介面：Mac 本機、Android（adb）、iPhone（AFC）三種實作。
+/// 檔案來源的抽象介面：Mac 本機、Android（adb）、iPhone（AFC）、MTP（libmtp）四種實作。
 ///
 /// 契約：
 /// - 路徑一律為該來源內的絕對路徑；`target` 參數是**完整目的路徑**（含名稱），不是目錄。
@@ -82,7 +84,6 @@ public extension FileSource {
     func move(_ path: String, to target: String) async throws {
         try await move(path, to: target) { _ in }
     }
-
 
     /// 寫入新檔內容（新增檔案、編輯器存檔）：先寫 Mac 暫存檔再 upload
     func write(_ data: Data, to path: String) async throws {

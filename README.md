@@ -6,6 +6,8 @@
 
 - **部署目標**：macOS 14+（開發機 macOS 27 / Xcode 27 / Swift 6.4）
 - **Android**：內附 adb（亦可改用 Android SDK／Homebrew 的 adb）
+- **MTP**（必要相依 `brew install libmtp`）：沒開 USB 偵錯的 Android、電子書閱讀器等 MTP 裝置；有 adb 的 Android 也可另選 MTP。
+  根目錄列出各儲存空間（內部、SD 卡）；同儲存空間移動與小檔複製由裝置端完成，大檔／資料夾經 Mac 中繼（MTP 裝置端複製無進度且會逾時）
 - **iPhone**：透過 libimobiledevice（`brew install libimobiledevice ideviceinstaller`）。根目錄分兩個虛擬資料夾：
   `Media`（DCIM、Downloads、Books…）與 `Apps`（開啟檔案分享的 App 及其 Documents，等同 Finder 的「檔案」分頁）
 - **發佈**：自用、ad-hoc 簽章、App Sandbox 關閉；**語系**：English／繁體中文／简体中文（跟隨系統語言）
@@ -36,8 +38,9 @@ git clone <repo> SmartphoneFileManager && cd SmartphoneFileManager
 ## 開發
 
 ```bash
-swift test                                            # 單元測試（41 項，含預設略過的實機測試）
+swift test                                            # 單元測試（42 項，含預設略過的實機測試）
 SFM_LIVE=1 swift test --filter LiveDevice             # 實機整合測試（需 Android + iPhone）
+SFM_LIVE=1 swift test --filter MTPLive                # MTP 實機測試（需 MTP 裝置）
 ./tools/make-app.sh && open .build/SmartphoneFileManager.app
 open Package.swift                                    # Xcode 開發／除錯
 ```
@@ -45,11 +48,13 @@ open Package.swift                                    # Xcode 開發／除錯
 ## 目錄結構
 
 ```
-Package.swift                 SwiftPM（L1 SFMCore + L4 App + 測試）
+Package.swift                 SwiftPM（L0 CLibMTP + L1 SFMCore + L4 App + 測試）；找不到 libmtp 即停止建置
+Sources/CLibMTP/              L0：libmtp 標頭的 C 模組（弱連結）
 Sources/SFMCore/              L1：零 UI 相依，可 swift test
   Process/ProcessRunner       子行程唯一入口（可取消、逾時、串流、不經 shell、不依賴 run loop）
   Adb/                        AdbClient/DeviceConnection、AdbLocator、ShellText 跳脫、Tokenizer
-  Sources/                    FileSource 抽象 + Mac／Android／iPhone 實作、FileTransfer 傳輸引擎
+  Sources/                    FileSource 抽象 + Mac／Android／iPhone／MTP 實作、FileTransfer 傳輸引擎
+  MTP/                        MTPSession（每台裝置一條序列佇列）、MTPDeviceManager（偵測／開啟／釋放）
   Model/                      FileItem、StatParser、SortType、TextCodec、Bookmark
   Services/                   AppPackage／DeviceInfo／Clipboard／Scrcpy（Android 工具）
   Terminal/                   AdbShellSession（FSM）、ShellOutputFilter、補完
@@ -65,7 +70,7 @@ tools/                        install.sh、make-app.sh、make-icon.swift、AppIc
 
 ## 狀態
 
-- `swift build` 零警告；`swift test` 41/41；實機整合測試（Palma Android + iPhone iOS 27）通過。
+- `swift build` 零警告；`swift test` 42/42；實機整合測試（Palma Android + iPhone iOS 27）通過。
 - 已截圖確認：左 iPhone／右 Android 雙窗格瀏覽。
 - 待手動驗收：UI 上的 ⌘C/⌘X/⌘V、拖放、拖到 Finder（file promise，best-effort）。
 

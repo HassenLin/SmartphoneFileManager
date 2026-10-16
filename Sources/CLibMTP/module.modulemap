@@ -1,0 +1,7 @@
+// libmtp（LGPL-2.1-or-later，Homebrew 安裝、動態連結、不內附）的 C 模組。
+// 刻意不寫 `link "mtp"`：連結由 Package.swift 以 `-weak-lmtp` 弱連結，
+// 未安裝 libmtp 的 Mac 仍可啟動 app（MTP 功能停用），見 `MTP.isAvailable`。
+module CLibMTP [system] {
+    header "shim.h"
+    export *
+}

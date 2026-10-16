@@ -3,7 +3,8 @@
 #
 # 做的事（依序）：
 #   1. 檢查 macOS 版本（14+）與 Swift toolchain（Xcode 或 Command Line Tools）
-#   2. 選用相依（Homebrew）：libimobiledevice + ideviceinstaller（iPhone）、scrcpy（螢幕鏡像）
+#   2. 必要相依（Homebrew）：libmtp（MTP，建置與執行都需要）
+#      選用相依（Homebrew）：libimobiledevice + ideviceinstaller（iPhone）、scrcpy（螢幕鏡像）
 #   3. 跑核心層單元測試（可略過）
 #   4. 以 release 組出 .app，安裝到 /Applications（無寫入權限時改 ~/Applications）
 #
@@ -60,7 +61,17 @@ info "Swift：$swift_version"
 # Package.swift 需要 swift-tools-version 6.0
 echo "$swift_version" | grep -Eq 'Swift version (6|[7-9])\.' || die "需要 Swift 6 以上（請更新 Xcode 或 Command Line Tools）"
 
-# ── 2. 選用相依 ─────────────────────────────────────────────
+# ── 2. 必要相依：libmtp ─────────────────────────────────────
+# Package.swift 建置時需要 libmtp.h，執行時以弱連結載入 libmtp.dylib
+if [ ! -f /opt/homebrew/include/libmtp.h ] && [ ! -f /usr/local/include/libmtp.h ]; then
+    command -v brew >/dev/null 2>&1 || die "需要 Homebrew 以安裝 libmtp（MTP 必要相依）：https://brew.sh"
+    info "安裝 libmtp（MTP 必要相依）"
+    brew install libmtp
+else
+    info "libmtp 已安裝"
+fi
+
+# ── 2b. 選用相依 ────────────────────────────────────────────
 if command -v brew >/dev/null 2>&1; then
     if ! command -v afcclient >/dev/null 2>&1 || ! command -v ideviceinstaller >/dev/null 2>&1; then
         if ask "安裝 libimobiledevice + ideviceinstaller（存取 iPhone 媒體區與 App 文件需要）？"; then

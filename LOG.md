@@ -1,5 +1,16 @@
 # LOG
 
+- 2026-10-16｜**MTP 支援（libmtp）**
+  - 新增 `MTPFileSource`：虛擬根目錄列出儲存空間；路徑 ⇄ 物件 ID 快取於 session。
+    `MTPSession` 每台裝置一條序列佇列（libmtp 非執行緒安全、MTP 一次一個交易）；`MTPDeviceManager` 以 USB 位置辨識、
+    開啟失敗（被 Android File Transfer／OpenMTP／影像擷取佔用）15 秒後重試。
+  - 裝置內操作：同儲存空間移動用 Move Object；≤256MB 單檔的複製／跨儲存空間移動用 Copy／Move Object；
+    其餘經 Mac 中繼（MTP 裝置端複製無進度，且 USB 交易逾時 20～60 秒，大檔會在裝置仍在寫入時逾時）。
+  - libmtp 為固定（必要）相依：Package.swift 找不到 libmtp.h 即停止建置；以 `-weak-lmtp` 弱連結，
+    執行時缺 libmtp 仍可啟動並提示安裝。`install.sh` 自動安裝 libmtp。
+  - 實機測試 `MTPLive`（Palma：內部共用儲存空間 + SD 512G）通過：上傳（有進度）、下載比對、改名、移動、裝置端複製、中繼複製、跨儲存空間移動、遞迴刪除。
+  - 已知：建置時 ld 警告 libmtp.dylib 為較新 macOS 編譯（Homebrew bottle 依本機系統），不影響執行。
+
 - 2026-10-16｜**移動／複製顯示進度、空間預檢、拖曳誤下載修正、路徑列拷貝路徑**
   - `FileSource.move` 新增 `onProgress`（另有不帶進度的便利多載供改名使用）。
     Android：`stat -L -c %d` 判斷跨檔案系統（內部儲存 ⇄ SD 卡，`mv` 實為整份複製），

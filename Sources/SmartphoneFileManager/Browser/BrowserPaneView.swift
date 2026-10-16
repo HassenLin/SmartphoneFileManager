@@ -217,6 +217,18 @@ struct BrowserPaneView: View {
             } actions: {
                 Button("Setup Guide…") { app.sheet = .setupGuide(.iphone) }
             }
+        case .mtp:
+            ContentUnavailableView {
+                Label(MTP.isAvailable ? "MTP device not connected" : "MTP access is not set up",
+                      systemImage: "cable.connector.slash")
+            } description: {
+                if MTP.isAvailable {
+                    Text(app.devices.mtpErrors.first
+                         ?? String(localized: "Connect the device by USB and choose “File transfer” (MTP) on it."))
+                } else {
+                    Text("MTP access needs the free libmtp library: brew install libmtp")
+                }
+            }
         default:
             EmptyView()
         }

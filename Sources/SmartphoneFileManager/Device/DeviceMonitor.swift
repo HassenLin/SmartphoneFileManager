@@ -1,7 +1,7 @@
 import SFMCore
 import SwiftUI
 
-/// 裝置清單輪詢：Android（`adb devices -l`）與 iPhone（`idevice_id -l`），每 3 秒一次。
+/// 裝置清單輪詢：Android（`adb devices -l`）、iPhone（`idevice_id -l`）與 MTP（libmtp 偵測 USB），每 3 秒一次。
 ///
 /// `selectedSerial` 是工具列「裝置工具」（終端機、App、截圖…）的目標 Android 裝置；
 /// 兩個檔案窗格各自選擇來源，與它無關。
@@ -12,6 +12,9 @@ import SwiftUI
 final class DeviceMonitor {
     private(set) var devices: [AdbDeviceInfo] = []
     private(set) var iphones: [IPhoneDeviceInfo] = []
+    private(set) var mtpDevices: [MTPDeviceInfo] = []
+    /// MTP 裝置開啟失敗的訊息（例如被其他 app 佔用），顯示在 MTP 窗格的未連線畫面
+    private(set) var mtpErrors: [String] = []
     var selectedSerial: String?
     /// adb 本身無法執行（找不到、權限）時的錯誤；有值時 UI 顯示設定提示
     private(set) var adbError: String?
@@ -58,6 +61,11 @@ final class DeviceMonitor {
         let phones = await IPhoneDeviceInfo.list(knownNames: iphoneNames)
         for phone in phones { iphoneNames[phone.udid] = phone.name }
         if phones != iphones { iphones = phones }
+
+        let mtp = await MTPDeviceManager.shared.refresh()
+        if mtp != mtpDevices { mtpDevices = mtp }
+        let errors = MTPDeviceManager.shared.openErrors
+        if errors != mtpErrors { mtpErrors = errors }
     }
 
     /// 設定變更 adb 路徑後重新啟動 server
