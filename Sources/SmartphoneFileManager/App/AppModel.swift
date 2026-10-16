@@ -448,11 +448,13 @@ final class AppModel {
     // MARK: 拖放
 
     /// 列的拖曳來源：
-    /// 1. 自有型別（拖到另一個窗格 → 走 FileTransfer，有進度可取消）
-    /// 2. Mac 項目：檔案 URL（可拖到 Finder／其他 App）
-    /// 3. 裝置項目：檔案承諾（拖到 Finder 時才下載到暫存資料夾再交出）
+    /// 1. 拖曳開始時記錄於 `activeDrag`（窗格之間的放下直接用它，見 `handleInternalDrop`）
+    /// 2. 自有型別（僅本 app 可見；`activeDrag` 遺失時的退路）
+    /// 3. Mac 項目：檔案 URL（可拖到 Finder／其他 App）
     func dragProvider(for item: FileItem, in side: PaneSide) -> NSItemProvider {
         let browser = pane(side)
+        if let sourceID = browser.sourceID { recordDrag(item, from: sourceID) }
+        PaneDropDelegate.log.notice("dragProvider \(side.rawValue, privacy: .public) items=\(self.activeDrag?.items.count ?? -1)")
         let provider = browser.sourceID == .mac
             ? (NSItemProvider(contentsOf: URL(fileURLWithPath: item.path)) ?? NSItemProvider())
             : NSItemProvider()
@@ -463,46 +465,58 @@ final class AppModel {
                 return nil
             }
         }
-        if browser.sourceID != .mac, let source = browser.source {
-            provider.suggestedName = item.name
-            let type = item.isDirectory ? UTType.folder : (UTType(filenameExtension: (item.name as NSString).pathExtension) ?? .data)
-            provider.registerFileRepresentation(forTypeIdentifier: type.identifier, fileOptions: [], visibility: .all) { completion in
-                // 這份檔案只給「拖到 Finder／其他 App」用，必須先把整個檔案下載到 Mac 暫存區。
-                // 實測：拖到另一個窗格時，SwiftUI 的 drop 目的地在 draggingEntered 就會要求這個表示法，
-                // 導致滑鼠一滑過窗格就開始下載（20G 檔案 → 藍框停住、暫存區被塞滿）。
-                // 窗格之間的拖放只需要上面的自有型別（同裝置走原生 mv），所以滑鼠仍在本 app 視窗上時拒絕提供。
-                if Self.isPointerOverOwnWindow() {
-                    completion(nil, false, CocoaError(.userCancelled))
-                    return nil
-                }
-                let directory = FileManager.default.temporaryDirectory.appendingPathComponent("afm-drag-\(UUID().uuidString)")
-                let destination = directory.appendingPathComponent(item.name)
-                Task {
-                    do {
-                        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-                        try await source.download(item.path, to: destination, expectedSize: nil) { _ in }
-                        completion(destination, false, nil)
-                    } catch {
-                        completion(nil, false, error)
-                    }
-                }
-                return nil
-            }
-        }
+        // 裝置上的項目不附帶「拖到 Finder 用」的檔案表示法（registerFileRepresentation）：
+        // 系統在拖曳經過任何放下目的地（包括本 app 的窗格）時就要求它準備好，而它必須先整份下載；
+        // 實測無論立即下載、拒絕或延後回應，都會讓窗格之間的拖曳卡住（藍框不消失、拖曳無法結束）。
+        // 裝置檔案存到 Mac 請用「匯出」或拖到 Mac 窗格。
         return provider
     }
 
-    /// 滑鼠目前所在的最上層視窗是否屬於本 app（拖曳期間由 AppKit 在主執行緒或背景執行緒呼叫，兩者都要能用）
-    nonisolated static func isPointerOverOwnWindow() -> Bool {
-        let check: @MainActor @Sendable () -> Bool = {
-            let number = NSWindow.windowNumber(at: NSEvent.mouseLocation, belowWindowWithWindowNumber: 0)
-            return NSApp.windows.contains { $0.windowNumber == number }
-        }
-        if Thread.isMainThread { return MainActor.assumeIsolated(check) }
-        return DispatchQueue.main.sync { MainActor.assumeIsolated(check) }
+    /// 進行中的 app 內拖曳（拖曳開始時記錄，放下或下一次拖曳時更新）
+    struct ActiveDrag {
+        let source: SourceID
+        var items: [FileItem]
+        let startedAt: Date
     }
 
-    /// 放下到窗格：自有項目 → FileTransfer；Finder 檔案 → 從 Mac 拷貝。
+    @ObservationIgnored private(set) var activeDrag: ActiveDrag?
+
+    /// Table 拖曳多選時，會在同一瞬間對每一列各要一次 item provider：0.5 秒內同來源的視為同一次拖曳
+    private func recordDrag(_ item: FileItem, from source: SourceID) {
+        if var drag = activeDrag, drag.source == source, Date().timeIntervalSince(drag.startedAt) < 0.5 {
+            if !drag.items.contains(item) { drag.items.append(item) }
+            activeDrag = drag
+        } else {
+            activeDrag = ActiveDrag(source: source, items: [item], startedAt: Date())
+        }
+    }
+
+    /// 窗格之間的放下：直接使用拖曳開始時的紀錄，不載入任何拖曳資料。
+    /// 與 Finder 相同：同一來源預設移動（原生 mv），按住 Option 為拷貝；不同來源為拷貝。
+    func handleInternalDrop(on side: PaneSide, directory: String? = nil, optionHeld: Bool) -> Bool {
+        guard let drag = activeDrag, pane(side).source != nil else {
+            PaneDropDelegate.log.notice("handleInternalDrop: 無 activeDrag 或來源不可用")
+            return false
+        }
+        PaneDropDelegate.log.notice("handleInternalDrop \(side.rawValue, privacy: .public) items=\(drag.items.count)")
+        activeDrag = nil
+        let browser = pane(side)
+        let target = directory ?? browser.path
+        let items = drag.items.filter {
+            !(drag.source == browser.sourceID && RemotePath.parent(of: $0.path) == RemotePath.normalize(target))
+        }
+        transfer(items, from: drag.source, to: side, directory: target, move: drag.source == browser.sourceID && !optionHeld)
+        return true
+    }
+
+    /// 放下時的游標提示：同來源且未按 Option 為移動，其餘為拷貝
+    func dropOperation(on side: PaneSide, optionHeld: Bool) -> DropOperation {
+        guard let drag = activeDrag else { return .copy }
+        return drag.source == pane(side).sourceID && !optionHeld ? .move : .copy
+    }
+
+    /// 從 Finder／其他 App 放下到窗格（窗格之間的放下見 `handleInternalDrop`）。
+    /// 下方仍保留自有型別的處理，作為 `activeDrag` 遺失時的退路。
     /// 與 Finder 相同：**同一來源**（例如左右都是同一台 iPhone）預設為移動，走原生 mv、
     /// 不經 Mac 中繼；按住 Option 才是拷貝。不同來源一律拷貝。
     /// 拖回自己所在的同一資料夾視為不動作，避免誤觸產生副本。

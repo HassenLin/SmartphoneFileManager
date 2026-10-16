@@ -1,5 +1,6 @@
 import SFMCore
 import AppKit
+import OSLog
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -10,7 +11,8 @@ import UniformTypeIdentifiers
 struct BrowserPaneView: View {
     @Bindable var app: AppModel
     let side: PaneSide
-    @State private var dropTargeted = false
+    /// 藍框狀態（見 `DropTargetState`：不可用窗格的 @State Bool，否則藍框一變整個窗格重算）
+    @State private var dropState = DropTargetState()
 
     private var model: BrowserModel { app.pane(side) }
 
@@ -20,8 +22,8 @@ struct BrowserPaneView: View {
             Divider()
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .modifier(DropHighlight(active: dropTargeted))
-                .onDrop(of: [.afmItems, .fileURL], isTargeted: $dropTargeted) { app.handleDrop($0, on: side) }
+                .overlay { DropHighlightOverlay(state: dropState) }
+                .onDrop(of: [.afmItems, .fileURL], delegate: PaneDropDelegate(app: app, side: side, highlight: dropState))
             Divider()
             statusBar
         }
@@ -360,5 +362,50 @@ struct PaneContextMenu: View {
                 app.requestDelete(items, in: side)
             }
         }
+    }
+}
+
+/// 窗格的放下處理。
+///
+/// 窗格之間的拖曳（`.afmItems`）不載入任何拖曳資料，直接用 `AppModel.activeDrag` 完成：
+/// 若像 `onDrop(of:isTargeted:perform:)` 那樣交出 item provider，系統會先要求「拖到 Finder 用」的
+/// 檔案表示法（需整份下載），導致放下停住（藍框不消失、檔案沒動）。
+/// 只有從 Finder 等外部拖入時，才讀取檔案網址。
+struct PaneDropDelegate: DropDelegate {
+    let app: AppModel
+    let side: PaneSide
+    let highlight: DropTargetState
+
+    /// 拖放流程追蹤（`log stream --predicate 'subsystem == "idv.hassen.smartphonefilemanager" AND category == "drag"'`）
+    static let log = Logger(subsystem: "idv.hassen.smartphonefilemanager", category: "drag")
+
+    func dropEntered(info: DropInfo) {
+        Self.log.notice("dropEntered \(side.rawValue, privacy: .public) afm=\(info.hasItemsConforming(to: [.afmItems])) activeDrag=\(app.activeDrag?.items.count ?? -1)")
+        highlight.set(true)
+    }
+    func dropExited(info: DropInfo) {
+        Self.log.notice("dropExited \(side.rawValue, privacy: .public)")
+        highlight.set(false)
+    }
+    func validateDrop(info: DropInfo) -> Bool {
+        Self.log.notice("validateDrop \(side.rawValue, privacy: .public)")
+        return true
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: info.hasItemsConforming(to: [.afmItems])
+                     ? app.dropOperation(on: side, optionHeld: NSEvent.modifierFlags.contains(.option))
+                     : .copy)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        Self.log.notice("performDrop \(side.rawValue, privacy: .public) afm=\(info.hasItemsConforming(to: [.afmItems])) activeDrag=\(app.activeDrag?.items.count ?? -1)")
+        highlight.set(false)
+        let optionHeld = NSEvent.modifierFlags.contains(.option)
+        if info.hasItemsConforming(to: [.afmItems]),
+           app.handleInternalDrop(on: side, optionHeld: optionHeld) {
+            return true
+        }
+        return app.handleDrop(info.itemProviders(for: [.afmItems, .fileURL]), on: side)
     }
 }

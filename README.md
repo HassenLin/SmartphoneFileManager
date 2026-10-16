@@ -21,7 +21,7 @@
 | 雙窗格、任意來源 | **左右窗格各自**以標題的來源按鈕選擇：這台 Mac、任一 Android、任一 iPhone；同一台裝置可在兩邊同時開不同資料夾。來源與各來源最後所在資料夾都會記住，下次啟動恢復（裝置未連線時等它連上；資料夾已不存在則回起始資料夾） |
 | 拷貝／剪下／貼上 | 表格焦點時 ⌘C／⌘X／⌘V；右鍵「拷貝、剪下、貼上、貼到「資料夾」」；對單檔、資料夾、多選都適用。Finder 拷貝的檔案可直接貼到裝置；Mac 項目拷貝後可貼到 Finder |
 | 刪除 | Delete 鍵或右鍵；Mac 為移到垃圾桶，裝置為永久刪除（含資料夾內容），皆會確認 |
-| 窗格互傳 | 右鍵「複製／移動到另一窗格」、拖放（窗格 ⇄ 窗格、Finder ⇄ 窗格）；同 Finder：同一來源拖放為移動（原生 mv），按住 Option 為拷貝，不同來源及 Finder 拖入為拷貝 |
+| 窗格互傳 | 右鍵「複製／移動到另一窗格」、拖放（窗格 ⇄ 窗格、Finder → 窗格、Mac 窗格 → Finder；裝置檔案存到 Mac 用「匯出」或拖到 Mac 窗格）；同 Finder：同一來源拖放為移動（原生 mv），按住 Option 為拷貝，不同來源及 Finder 拖入為拷貝 |
 | 傳輸引擎 | 同來源原生 cp／mv，不經 Mac（cp 與 Android 內部儲存 ⇄ SD 卡等跨檔案系統 mv 會預檢空間並顯示進度；iPhone 的 AFC 沒有 copy，iPhone 內複製仍經 Mac）；跨來源經 Mac 暫存區中繼；剪下 = 複製成功後才刪來源；同名自動改名（`a 2.txt`）；進度顯示在視窗底部（不擋操作，可同時多個傳輸、各自取消）、取消時清掉不完整檔案 |
 | 檔案操作 | 新增資料夾/檔案、改名、權限（Android chmod）、路徑列右鍵拷貝路徑、遞迴搜尋（Android）、書籤（Android）、排序（點名稱／大小／修改日期欄位標題，或排序選單）、篩選 |
 | 編輯器 | 任一來源的文字檔：語法上色、⌘F／⌥⌘F、undo、編碼偵測與切換、無損存檔 |
@@ -73,7 +73,7 @@ tools/                        install.sh、make-app.sh、make-icon.swift、AppIc
 
 - `swift build` 零警告；`swift test` 42/42；實機整合測試（Palma Android + iPhone iOS 27）通過。
 - 已截圖確認：左 iPhone／右 Android 雙窗格瀏覽。
-- 待手動驗收：UI 上的 ⌘C/⌘X/⌘V、拖放、拖到 Finder（file promise，best-effort）。
+- 待手動驗收：UI 上的 ⌘C/⌘X/⌘V、拖放。
 
 第三方來源與授權見 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)（MIT；源自 wkbin/AdbFileManager）。
 

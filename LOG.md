@@ -5,6 +5,15 @@
   - 改為視窗底部的非強制回應 `TransferPanel`：可同時多個工作、各自進度與取消；同一台 MTP 裝置的工作由 session 佇列自然排隊。
   - 新增 `ProgressCoalescer`：高頻進度回報（libmtp 每個 USB 區塊一次）合併成主執行緒同時最多一個更新。
   - 補上 MTP 裝置清單變動時更新窗格（原本只監看 Android／iPhone）。
+  - 修正：窗格間拖放卡住（藍框出現後整個 app 無回應、選單不能按）。兩個原因：
+    1. 裝置項目附帶「拖到 Finder 用」的檔案表示法，系統在拖曳經過放下目的地時就要求它準備好（須整份下載）；
+       立即下載、拒絕、延後回應都會卡住。改為裝置項目不附帶；拖曳開始時記錄於 `activeDrag`，
+       窗格以 `PaneDropDelegate` 直接完成放下（不載入拖曳資料），游標依同來源／Option 顯示移動或拷貝。
+       代價：裝置檔案不能直接拖到 Finder（改用「匯出」或拖到 Mac 窗格）。
+    2. 藍框狀態原為窗格的 `@State`，一變整個窗格（含數百列表格）重算、底層拖放目的地 view 被重建，
+       AppKit 在左右窗格間反覆送出進入／離開（日誌實證），主執行緒被重算塞滿。改為獨立的 `DropTargetState`
+       （只由藍框讀取）且藍框只切換透明度、不改 view 結構；修正後進出順序與滑鼠路徑一致。
+  - 拖放流程加入日誌（subsystem `idv.hassen.smartphonefilemanager`、category `drag`），便於現場除錯。
 
 - 2026-10-16｜**adb 不再收錄於 repo（開源準備）**
   - `vendor/adb`（Google SDK Platform-Tools 二進位，再散布受 Android SDK 授權條款約束）移出 repo 並列入 `.gitignore`，

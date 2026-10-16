@@ -113,6 +113,34 @@ struct SortMenu: View {
 }
 
 /// 放下目標的外框提示
+/// 放下目標的藍框狀態。
+///
+/// 刻意放在獨立的 @Observable 物件、只由 `DropHighlightOverlay` 讀取：
+/// 若用窗格的 @State，藍框一變整個窗格（含數百列的表格）就重算，並可能重建底層的拖放目的地 view，
+/// AppKit 因而反覆送出離開／進入，在左右窗格間來回彈跳，主執行緒被重算塞滿（實測：拖曳時整個 app 卡住）。
+@MainActor
+@Observable
+final class DropTargetState {
+    private(set) var active = false
+
+    /// 只在狀態改變時寫入，避免無謂的畫面更新
+    func set(_ value: Bool) {
+        if active != value { active = value }
+    }
+}
+
+/// 藍框：永遠存在、只切換透明度，view 結構不變
+struct DropHighlightOverlay: View {
+    let state: DropTargetState
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 6)
+            .strokeBorder(Color.accentColor, lineWidth: 3)
+            .opacity(state.active ? 1 : 0)
+            .allowsHitTesting(false)
+    }
+}
+
 struct DropHighlight: ViewModifier {
     let active: Bool
 
