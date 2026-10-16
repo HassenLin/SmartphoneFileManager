@@ -9,15 +9,15 @@
 #   - 圖示（tools/AppIcon.icns）
 #   - ad-hoc 簽章
 #
-# 用法：./tools/make-app.sh [debug|release]   產物：.build/AdbFileManagerMac.app
+# 用法：./tools/make-app.sh [debug|release]   產物：.build/SmartphoneFileManager.app
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 CONFIG="${1:-debug}"
-APP_NAME="AdbFileManagerMac"
-DISPLAY_NAME="ADB File Manager"
-BUNDLE_ID="idv.hassen.adbfilemanager.mac"
-VERSION="3.1.2"
+APP_NAME="SmartphoneFileManager"
+DISPLAY_NAME="Smartphone File Manager"
+BUNDLE_ID="idv.hassen.smartphonefilemanager.mac"
+VERSION="1.0.0"
 BUILD_NUMBER="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
 APP=".build/${APP_NAME}.app"
 
@@ -69,12 +69,12 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>NSPrincipalClass</key><string>NSApplication</string>
     <!-- 自用工具、不上架，App Sandbox 關閉：要執行 adb／scrcpy 子行程、
          讀寫使用者任意選擇的資料夾，兩者在 sandbox 下都會被擋。 -->
-    <!-- 裝置端檔案在 app 內拖曳（裝置窗格 → 本機窗格）用的私有型別 -->
+    <!-- 窗格之間拖曳／剪貼簿用的私有型別（攜帶來源與項目清單） -->
     <key>UTExportedTypeDeclarations</key>
     <array>
         <dict>
-            <key>UTTypeIdentifier</key><string>idv.hassen.adbfilemanager.remote-file</string>
-            <key>UTTypeDescription</key><string>Android device file reference</string>
+            <key>UTTypeIdentifier</key><string>idv.hassen.smartphonefilemanager.remote-file</string>
+            <key>UTTypeDescription</key><string>Smartphone File Manager item reference</string>
             <key>UTTypeConformsTo</key><array><string>public.data</string></array>
         </dict>
     </array>

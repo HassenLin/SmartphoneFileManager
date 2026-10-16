@@ -1,61 +1,69 @@
-# ADB File Manager — macOS 原生版
+# Smartphone File Manager（macOS）
 
-[wkbin/AdbFileManager](https://github.com/wkbin/AdbFileManager)（Kotlin + Compose Desktop）的 macOS 移植版，
-以 **Swift 6 + SwiftUI** 重寫。結構：SwiftPM 套件 + `tools/make-app.sh` 組 .app。
+在 Mac 上同時管理 **Mac、Android、iPhone** 檔案的雙窗格檔案管理器，以 **Swift 6 + SwiftUI** 撰寫。
+源自 [wkbin/AdbFileManager](https://github.com/wkbin/AdbFileManager)（Kotlin/Compose）的 macOS 移植，
+並擴充為任意來源 ⇄ 任意來源。結構：SwiftPM 套件 + `tools/make-app.sh`。
 
 - **部署目標**：macOS 14+（開發機 macOS 27 / Xcode 27 / Swift 6.4）
-- **相依**：零第三方套件；內附 Google platform-tools 的 adb（universal binary）
-- **發佈**：自用、ad-hoc 簽章、App Sandbox 關閉（要執行 adb／scrcpy 子行程）
-- **語系**：English／繁體中文（跟隨系統）
+- **Android**：內附 adb（亦可改用 Android SDK／Homebrew 的 adb）
+- **iPhone**：透過 libimobiledevice 的 `afcclient`（`brew install libimobiledevice`），範圍為 AFC 媒體區（DCIM、Downloads、Books、Recordings…）
+- **發佈**：自用、ad-hoc 簽章、App Sandbox 關閉；**語系**：English／繁體中文
 
 ## 功能
 
 | 區塊 | 說明 |
 |---|---|
-| 雙窗格 | 左：本機（可收合，狀態記憶）；右：Android 裝置。右鍵「複製到對面」、拖放互傳 |
-| 拖放 | 本機/Finder → 裝置（上傳）；裝置 → 本機窗格（下載，有進度可取消）；裝置 → Finder（best-effort，放下時才 pull） |
-| 傳輸 | 進度（上傳輪詢遠端大小、下載輪詢本機大小）、可取消（SIGTERM adb 子行程）、取消後清掉新建的不完整檔案 |
-| 檔案操作 | 新增資料夾/檔案、改名、權限（chmod 勾選⇄八進位）、裝置內複製/移動、刪除（多選）、遞迴搜尋、書籤、排序、篩選 |
-| 編輯器 | NSTextView：語法上色、⌘F 尋找/⌥⌘F 取代、undo、編碼偵測與切換、無損存檔（必要時升級 UTF-8） |
-| 終端機 | 獨立視窗多分頁；ADB 模式 ⇄ `adb shell` 模式 FSM、歷史（↑↓）、Tab 補完、拖入檔案插入路徑 |
-| 裝置工具 | App 管理（啟動/停止/清資料/停用/備份 APK/解除安裝）、裝置資訊、重開機、截圖、寫入剪貼簿、scrcpy 鏡像、無線配對/連線 |
+| 雙窗格、任意來源 | **左右窗格各自**以標題的來源按鈕選擇：這台 Mac、任一 Android、任一 iPhone；同一台裝置可在兩邊同時開不同資料夾。選擇會記住 |
+| 拷貝／剪下／貼上 | 表格焦點時 ⌘C／⌘X／⌘V；右鍵「拷貝、剪下、貼上、貼到「資料夾」」；對單檔、資料夾、多選都適用。Finder 拷貝的檔案可直接貼到裝置；Mac 項目拷貝後可貼到 Finder |
+| 刪除 | Delete 鍵或右鍵；Mac 為移到垃圾桶，裝置為永久刪除（含資料夾內容），皆會確認 |
+| 窗格互傳 | 右鍵「複製／移動到另一窗格」、拖放（窗格 ⇄ 窗格、Finder ⇄ 窗格） |
+| 傳輸引擎 | 同來源原生 cp／mv；跨來源經 Mac 暫存區中繼；剪下 = 複製成功後才刪來源；同名自動改名（`a 2.txt`）；進度、可取消、取消時清掉不完整檔案 |
+| 檔案操作 | 新增資料夾/檔案、改名、權限（Android chmod）、遞迴搜尋（Android）、書籤（Android）、排序、篩選 |
+| 編輯器 | 任一來源的文字檔：語法上色、⌘F／⌥⌘F、undo、編碼偵測與切換、無損存檔 |
+| Android 工具 | 終端機（多分頁）、App 管理、裝置資訊、重開機、截圖、寫入剪貼簿、scrcpy 鏡像、無線配對／連線（工具列選擇目標裝置） |
 
-## 建置 / 執行
+## 安裝（另一台 Mac）
 
 ```bash
-swift test                                          # 核心層單元測試（29 項）
-swift tools/make-icon.swift                         # 只在改圖示時需要（產物已 commit）
-./tools/make-app.sh && open .build/AdbFileManagerMac.app
-./tools/make-app.sh release                         # 釋出版
-open Package.swift                                  # 用 Xcode 開發／除錯
+git clone <repo> SmartphoneFileManager && cd SmartphoneFileManager
+./tools/install.sh            # 檢查需求、詢問選用相依、測試、組 app、安裝到 /Applications
+```
+
+詳見 [`INSTALL.md`](INSTALL.md)。
+
+## 開發
+
+```bash
+swift test                                            # 單元測試（38 項）
+SFM_LIVE=1 swift test --filter LiveDevice             # 實機整合測試（需 Android + iPhone）
+./tools/make-app.sh && open .build/SmartphoneFileManager.app
+open Package.swift                                    # Xcode 開發／除錯
 ```
 
 ## 目錄結構
 
 ```
-Package.swift               SwiftPM（L1 AFMCore + L4 App + 測試）
-Sources/AFMCore/            L1：零 UI 相依，可 swift test
-  Process/ProcessRunner     子行程唯一入口（可取消、逾時、串流、不經 shell）
-  Adb/                      AdbClient/DeviceConnection、AdbLocator（內附/自訂/系統）、ShellText 跳脫、Tokenizer
-  Model/                    FileEntry/RemoteFile/LocalFile、StatParser、SortType、TextCodec、Bookmark
-  Services/                 RemoteFile／AppPackage／DeviceInfo／Clipboard／Scrcpy
-  Terminal/                 AdbShellSession（FSM）、ShellOutputFilter、補完
-Sources/AdbFileManagerMac/  L4：SwiftUI app（App/AppModel 為協調者，其餘依功能分資料夾）
-Tests/AFMCoreTests/         Swift Testing
-Localization/               *.lproj（由 tools/gen-strings.py 自 tools/zh-Hant.json 產生）
-vendor/                     adb、clipboard-helper.dex.b64（make-app.sh 放進 Contents/Resources/bin）
-tools/                      make-app.sh、make-icon.swift、AppIcon.icns、gen-strings.py、zh-Hant.json
+Package.swift                 SwiftPM（L1 SFMCore + L4 App + 測試）
+Sources/SFMCore/              L1：零 UI 相依，可 swift test
+  Process/ProcessRunner       子行程唯一入口（可取消、逾時、串流、不經 shell、不依賴 run loop）
+  Adb/                        AdbClient/DeviceConnection、AdbLocator、ShellText 跳脫、Tokenizer
+  Sources/                    FileSource 抽象 + Mac／Android／iPhone 實作、FileTransfer 傳輸引擎
+  Model/                      FileItem、StatParser、SortType、TextCodec、Bookmark
+  Services/                   AppPackage／DeviceInfo／Clipboard／Scrcpy（Android 工具）
+  Terminal/                   AdbShellSession（FSM）、ShellOutputFilter、補完
+Sources/SmartphoneFileManager/ L4：SwiftUI app
+  App/AppModel                協調者：來源解析、剪貼簿、傳輸、拖放、開啟
+  Browser/                    BrowserModel（窗格狀態，左右共用）、BrowserPaneView、對話框
+Tests/SFMCoreTests/           Swift Testing（含 FakeSource 引擎測試、實機測試）
+Localization/                 *.lproj（由 tools/gen-strings.py 自 tools/zh-Hant.json 產生）
+vendor/                       adb、clipboard-helper.dex.b64
+tools/                        install.sh、make-app.sh、make-icon.swift、AppIcon.icns、gen-strings.py、zh-Hant.json
 ```
-
-## 與原版的差異
-
-見 [`BACKGROUND.md`](BACKGROUND.md)。
 
 ## 狀態
 
-- `swift build` 零錯誤零警告；`swift test` 29/29 通過；`.app` 可組出並啟動、裝置輪詢正常、無殭屍行程。
-- 已以實機（Palma）截圖確認雙窗格瀏覽；**待驗收**：上傳/下載/編輯/刪除、終端機、App 管理等互動功能。
+- `swift build` 零警告；`swift test` 38/38；實機整合測試（Palma Android + iPhone iOS 27）通過。
+- 已截圖確認：左 iPhone／右 Android 雙窗格瀏覽。
+- 待手動驗收：UI 上的 ⌘C/⌘X/⌘V、拖放、拖到 Finder（file promise，best-effort）。
 
-## 更動紀錄
-
-見 [`LOG.md`](LOG.md)。
+設計取捨見 [`BACKGROUND.md`](BACKGROUND.md)，更動紀錄見 [`LOG.md`](LOG.md)。
