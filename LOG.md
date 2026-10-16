@@ -1,5 +1,11 @@
 # LOG
 
+- 2026-10-16｜**建置需要完整 Xcode：自動選用 Xcode 工具鏈**
+  - 另一台 Mac pull 後編譯失敗：`plugin for module 'SwiftUIMacros' not found`。新版 SDK 的 SwiftUI 以巨集實作 `@State` 等，
+    巨集外掛 `libSwiftUIMacros.dylib` 只在 Xcode 內（Command Line Tools 沒有）；該機 xcode-select 指向 Command Line Tools 或未裝 Xcode。
+  - 新增 `tools/xcode-env.sh`（`make-app.sh`、`install.sh` 載入）：xcode-select 未指向 Xcode.app 時，找到 Xcode 即只對該次建置設定
+    `DEVELOPER_DIR`（不需 sudo），找不到則說明需安裝 Xcode。INSTALL.md 更新需求說明。
+
 - 2026-10-16｜**iPhone Wi-Fi 連線**
   - 偵測同時列出 USB（`idevice_id -l`）與 Wi-Fi（`idevice_id -n`）裝置，同一支兩邊都有時用 USB；以 UDID 識別，拔掉 USB 後自動改走 Wi-Fi。
   - Wi-Fi 裝置呼叫 `afcclient`／`ideviceinfo`／`ideviceinstaller` 時加 `-n`；來源選單標示「(Wi-Fi)」；未連線畫面說明在 Finder 開啟 Wi-Fi 顯示。

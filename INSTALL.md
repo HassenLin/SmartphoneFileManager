@@ -1,6 +1,10 @@
 # 安裝與建置
 
-需求：macOS 14+、Swift 6 toolchain（Xcode 或 Command Line Tools）。不需 Java、Gradle。
+需求：macOS 14+、**完整的 Xcode**（Swift 6）。只有 Command Line Tools 不行：新版 SDK 的 SwiftUI 以巨集實作 `@State` 等，
+巨集外掛只隨 Xcode 提供，否則會出現「plugin for module 'SwiftUIMacros' not found」。`make-app.sh`／`install.sh` 會在
+xcode-select 指向 Command Line Tools 時自動改用已安裝的 Xcode；自行執行 `swift build` 時請先
+`sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`（或在指令前加 `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`）。
+不需 Java、Gradle。
 必要：Homebrew 的 `libmtp`（MTP 裝置存取）與 adb（`android-platform-tools`，已有 Android SDK 可沿用）；`install.sh` 會自動安裝。
 選用：Homebrew 的 `libimobiledevice` + `ideviceinstaller`（iPhone 媒體區與 App 文件）、`scrcpy`（Android 鏡像）。
 缺少任何一項時，app 內「輔助說明 → 安裝導引」會顯示步驟、官方下載連結與安裝指令。
@@ -13,7 +17,7 @@
 ./tools/install.sh --no-deps --skip-tests --dest ~/Applications
 ```
 
-腳本會：檢查 macOS／Swift 版本（缺 toolchain 時開啟 Command Line Tools 安裝）→ 安裝選用相依 →
+腳本會：檢查 macOS／Xcode 工具鏈（指向 Command Line Tools 時自動改用 Xcode）→ 安裝選用相依 →
 `swift test` → `make-app.sh release` → 安裝為 `/Applications/Smartphone File Manager.app`（無權限時改 `~/Applications`）。
 
 ## 手動

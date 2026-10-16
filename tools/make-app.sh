@@ -12,6 +12,8 @@
 # 用法：./tools/make-app.sh [debug|release]   產物：.build/SmartphoneFileManager.app
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# 需要完整 Xcode 的工具鏈（SwiftUI 巨集外掛），見 xcode-env.sh
+source tools/xcode-env.sh
 
 CONFIG="${1:-debug}"
 APP_NAME="SmartphoneFileManager"

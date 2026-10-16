@@ -2,7 +2,7 @@
 # 在另一台 Mac 上從原始碼安裝 Smartphone File Manager。
 #
 # 做的事（依序）：
-#   1. 檢查 macOS 版本（14+）與 Swift toolchain（Xcode 或 Command Line Tools）
+#   1. 檢查 macOS 版本（14+）與完整 Xcode 的 Swift toolchain（只有 Command Line Tools 不行，見 xcode-env.sh）
 #   2. 必要相依（Homebrew）：libmtp（MTP，建置與執行都需要）、adb（android-platform-tools）
 #      選用相依（Homebrew）：libimobiledevice + ideviceinstaller（iPhone）、scrcpy（螢幕鏡像）
 #   3. 跑核心層單元測試（可略過）
@@ -52,15 +52,14 @@ info "檢查系統需求"
 major=$(sw_vers -productVersion | cut -d. -f1)
 [ "$major" -ge 14 ] || die "需要 macOS 14 以上（目前 $(sw_vers -productVersion)）"
 
-if ! xcode-select -p >/dev/null 2>&1 || ! command -v swift >/dev/null 2>&1; then
-    warn "找不到 Swift toolchain，將開啟 Command Line Tools 安裝視窗；安裝完成後請重新執行本腳本"
-    xcode-select --install || true
-    exit 1
-fi
+# SwiftUI 的巨集外掛只隨 Xcode 提供：xcode-select 指向 Command Line Tools 時自動改用已安裝的 Xcode，
+# 沒有 Xcode 則說明需安裝後停止
+source tools/xcode-env.sh
+command -v swift >/dev/null 2>&1 || die "找不到 Swift toolchain，請安裝 Xcode（App Store）"
 swift_version=$(swift --version 2>/dev/null | head -1)
 info "Swift：$swift_version"
 # Package.swift 需要 swift-tools-version 6.0
-echo "$swift_version" | grep -Eq 'Swift version (6|[7-9])\.' || die "需要 Swift 6 以上（請更新 Xcode 或 Command Line Tools）"
+echo "$swift_version" | grep -Eq 'Swift version (6|[7-9])\.' || die "需要 Swift 6 以上（請更新 Xcode）"
 
 # ── 2. 必要相依：libmtp ─────────────────────────────────────
 # Package.swift 建置時需要 libmtp.h，執行時以弱連結載入 libmtp.dylib
