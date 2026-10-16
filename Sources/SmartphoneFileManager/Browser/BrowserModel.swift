@@ -39,6 +39,8 @@ final class BrowserModel {
     }
 
     @ObservationIgnored var pendingHighlight: Set<String> = []
+    /// 顯示名稱與路徑最後一段不同的項目（iPhone App 資料夾：路徑是 bundle id、顯示 App 名稱），路徑列用
+    private(set) var displayNames: [String: String] = [:]
     @ObservationIgnored private var loadTask: Task<Void, Never>?
     /// 每個來源最後停留的資料夾，切換來源再切回來時恢復
     @ObservationIgnored private var lastPaths: [SourceID: String] = [:]
@@ -116,6 +118,9 @@ final class BrowserModel {
                 let list = try await source.list(path, includeHidden: includeHidden)
                 guard !Task.isCancelled, path == self.path else { return }
                 files = sortType.sorted(list)
+                for item in list where item.name != RemotePath.name(of: item.path) {
+                    displayNames[item.path] = item.name
+                }
                 phase = .loaded
                 let ids = Set(files.map(\.id))
                 selection.formIntersection(ids)

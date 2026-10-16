@@ -142,6 +142,8 @@ struct MainWindowView: View {
             ImagePreviewView(model: model)
         case let .editor(model):
             EditorView(model: model)
+        case let .setupGuide(topic):
+            SetupGuideView(app: app, topic: topic)
         }
     }
 }

@@ -72,7 +72,7 @@ private struct GeneralSettingsView: View {
                     }
                 }
             }
-            Text("Language follows the macOS system setting (English / 繁體中文).")
+            Text("Language follows the macOS system setting (English / 繁體中文 / 简体中文).")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .formStyle(.grouped)
@@ -148,7 +148,7 @@ private struct ScrcpySettingsView: View {
                 }
             }
             LabeledContent("Detected") {
-                Text(ScrcpyLauncher.locate() ?? String(localized: "Not found — brew install scrcpy"))
+                Text(ScrcpyLauncher.locate() ?? String(localized: "Not found — see Help → Setup Guide"))
                     .textSelection(.enabled)
             }
             Stepper("Max FPS: \(maxFps == 0 ? String(localized: "unlimited") : String(maxFps))", value: $maxFps, in: 0...120, step: 10)

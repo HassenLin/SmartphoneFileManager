@@ -90,10 +90,11 @@ struct BrowserPaneView: View {
                 }
                 .disabled(!option.enabled)
             }
+            Divider()
             if !app.devices.iphoneToolsInstalled {
-                Divider()
-                Text("iPhone: brew install libimobiledevice")
+                Button("Set Up iPhone Access…") { app.sheet = .setupGuide(.iphone) }
             }
+            Button("Setup Guide…") { app.sheet = .setupGuide(app.devices.adbError != nil ? .android : .iphone) }
         } label: {
             Label(app.title(for: model.sourceID), systemImage: app.symbol(for: model.sourceID))
                 .font(.headline)
@@ -110,7 +111,7 @@ struct BrowserPaneView: View {
         var current = ""
         for part in RemotePath.components(model.path) {
             current += "/" + part
-            result.append((part, current))
+            result.append((model.displayNames[current] ?? part, current))
         }
         return result
     }
@@ -188,7 +189,10 @@ struct BrowserPaneView: View {
             if let error = app.devices.adbError {
                 ContentUnavailableView {
                     Label("ADB is not available", systemImage: "wrench.and.screwdriver")
-                } description: { Text(error) } actions: { SettingsLink { Text("Open Settings…") } }
+                } description: { Text(error) } actions: {
+                    Button("Setup Guide…") { app.sheet = .setupGuide(.android) }
+                    SettingsLink { Text("Open Settings…") }
+                }
             } else {
                 let device = app.devices.devices.first { $0.serial == model.sourceID?.deviceID }
                 ContentUnavailableView {
@@ -199,15 +203,19 @@ struct BrowserPaneView: View {
                     Text("Enable USB debugging on the Android device and connect it by USB, or use wireless debugging.")
                 } actions: {
                     Button("Wireless Connection…") { app.sheet = .connect }
+                    Button("Setup Guide…") { app.sheet = .setupGuide(.android) }
                 }
             }
         case .iphone:
             ContentUnavailableView {
-                Label("iPhone not connected", systemImage: "iphone.slash")
+                Label(app.devices.iphoneToolsInstalled ? "iPhone not connected" : "iPhone access is not set up",
+                      systemImage: "iphone.slash")
             } description: {
                 Text(app.devices.iphoneToolsInstalled
                      ? String(localized: "Connect the iPhone by USB, unlock it and tap “Trust This Computer”.")
-                     : String(localized: "iPhone access needs libimobiledevice: brew install libimobiledevice"))
+                     : String(localized: "iPhone access needs the free libimobiledevice tools."))
+            } actions: {
+                Button("Setup Guide…") { app.sheet = .setupGuide(.iphone) }
             }
         default:
             EmptyView()

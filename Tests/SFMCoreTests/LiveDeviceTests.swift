@@ -24,7 +24,7 @@ struct LiveDeviceTests {
         let iphone = IPhoneFileSource(udid: udid, executable: tool)
         let tag = "afm-live-test-\(UUID().uuidString.prefix(8))"
         let androidDir = "/sdcard/Download/\(tag)"
-        let iphoneDir = "/Downloads/\(tag)"
+        let iphoneDir = "/\(IPhoneFileSource.mediaFolder)/Downloads/\(tag)"
 
         // Mac 測試資料：一個檔案（含中文與空白）+ 一個含子檔的資料夾
         let macDir = FileManager.default.temporaryDirectory.appendingPathComponent(tag)
@@ -76,6 +76,19 @@ struct LiveDeviceTests {
         } catch {
             Issue.record(error)
         }
+        // App 文件區（house_arrest）：清單可列、虛擬層受保護
+        do {
+            let apps = try await iphone.list("/Apps", includeHidden: false)
+            #expect(!apps.isEmpty, "iPhone 上應有可分享檔案的 App")
+            if let first = apps.first {
+                _ = try await iphone.list(first.path, includeHidden: true)   // 能列出（可能是空的）
+            }
+            await #expect(throws: AdbError.self) { try await iphone.delete("/Apps") }
+            await #expect(throws: AdbError.self) { try await iphone.makeDirectory(at: "/x") }
+        } catch {
+            Issue.record(error)
+        }
+
         // 清理（iPhone 刪除為遞迴實作，本身也是受測項目）
         try await iphone.delete(iphoneDir)
         try await android.delete(androidDir)

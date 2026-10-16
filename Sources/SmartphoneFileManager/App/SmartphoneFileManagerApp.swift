@@ -23,6 +23,9 @@ struct SmartphoneFileManagerApp: App {
         .defaultSize(width: 1200, height: 760)
         .commands {
             CommandGroup(replacing: .newItem) { }
+            CommandGroup(replacing: .help) {
+                Button("Setup Guide…") { app.sheet = .setupGuide(.android) }
+            }
             CommandMenu("Device") {
                 Button("Refresh Both Panes") {
                     app.left.reload()

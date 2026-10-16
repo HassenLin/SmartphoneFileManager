@@ -6,8 +6,10 @@
 
 - **部署目標**：macOS 14+（開發機 macOS 27 / Xcode 27 / Swift 6.4）
 - **Android**：內附 adb（亦可改用 Android SDK／Homebrew 的 adb）
-- **iPhone**：透過 libimobiledevice 的 `afcclient`（`brew install libimobiledevice`），範圍為 AFC 媒體區（DCIM、Downloads、Books、Recordings…）
-- **發佈**：自用、ad-hoc 簽章、App Sandbox 關閉；**語系**：English／繁體中文
+- **iPhone**：透過 libimobiledevice（`brew install libimobiledevice ideviceinstaller`）。根目錄分兩個虛擬資料夾：
+  `Media`（DCIM、Downloads、Books…）與 `Apps`（開啟檔案分享的 App 及其 Documents，等同 Finder 的「檔案」分頁）
+- **發佈**：自用、ad-hoc 簽章、App Sandbox 關閉；**語系**：English／繁體中文／简体中文（跟隨系統語言）
+- **安裝導引**：缺 adb、libimobiledevice、scrcpy 時於 app 內顯示步驟、官方下載連結與一鍵安裝指令（輔助說明 → 安裝導引）
 
 ## 功能
 
@@ -34,7 +36,7 @@ git clone <repo> SmartphoneFileManager && cd SmartphoneFileManager
 ## 開發
 
 ```bash
-swift test                                            # 單元測試（38 項）
+swift test                                            # 單元測試（40 項）
 SFM_LIVE=1 swift test --filter LiveDevice             # 實機整合測試（需 Android + iPhone）
 ./tools/make-app.sh && open .build/SmartphoneFileManager.app
 open Package.swift                                    # Xcode 開發／除錯
@@ -54,15 +56,16 @@ Sources/SFMCore/              L1：零 UI 相依，可 swift test
 Sources/SmartphoneFileManager/ L4：SwiftUI app
   App/AppModel                協調者：來源解析、剪貼簿、傳輸、拖放、開啟
   Browser/                    BrowserModel（窗格狀態，左右共用）、BrowserPaneView、對話框
+  Setup/                      SetupGuideView（安裝導引）
 Tests/SFMCoreTests/           Swift Testing（含 FakeSource 引擎測試、實機測試）
-Localization/                 *.lproj（由 tools/gen-strings.py 自 tools/zh-Hant.json 產生）
+Localization/                 *.lproj（tools/gen-strings.py 產生：繁中＝zh-Hant.json 人工維護；簡中＝hant2hans.swift 自動轉換＋overrides）
 vendor/                       adb、clipboard-helper.dex.b64
-tools/                        install.sh、make-app.sh、make-icon.swift、AppIcon.icns、gen-strings.py、zh-Hant.json
+tools/                        install.sh、make-app.sh、make-icon.swift、AppIcon.icns、gen-strings.py、hant2hans.swift、zh-Hant.json、zh-Hans.overrides.json
 ```
 
 ## 狀態
 
-- `swift build` 零警告；`swift test` 38/38；實機整合測試（Palma Android + iPhone iOS 27）通過。
+- `swift build` 零警告；`swift test` 40/40；實機整合測試（Palma Android + iPhone iOS 27）通過。
 - 已截圖確認：左 iPhone／右 Android 雙窗格瀏覽。
 - 待手動驗收：UI 上的 ⌘C/⌘X/⌘V、拖放、拖到 Finder（file promise，best-effort）。
 

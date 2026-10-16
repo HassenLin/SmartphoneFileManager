@@ -18,6 +18,7 @@ enum ActiveSheet: Identifiable {
     case appManager
     case imagePreview(ImagePreviewModel)
     case editor(EditorModel)
+    case setupGuide(SetupTopic)
 
     var id: String {
         switch self {
@@ -33,6 +34,7 @@ enum ActiveSheet: Identifiable {
         case .appManager: return "appManager"
         case let .imagePreview(model): return "image:\(model.item.path)"
         case let .editor(model): return "editor:\(model.item.path)"
+        case let .setupGuide(topic): return "setup:\(topic.rawValue)"
         }
     }
 }
@@ -93,6 +95,11 @@ final class AppModel {
     func start() {
         devices.start()
         refreshSources()
+        // adb 無法執行時（例如設定指向不存在的路徑）一啟動就開安裝導引，而不是讓使用者面對空窗格
+        Task {
+            await devices.refresh()
+            if devices.adbError != nil, sheet == nil { sheet = .setupGuide(.android) }
+        }
     }
 
     // MARK: 來源
@@ -513,7 +520,8 @@ final class AppModel {
     func startScreenMirror() {
         guard let device = devices.selectedDevice, device.isReady else { return toasts.error(AdbError.noDevice) }
         guard let scrcpy = ScrcpyLauncher.locate() else {
-            return toasts.error(String(localized: "scrcpy not found. Install it with “brew install scrcpy” or set its path in Settings."))
+            sheet = .setupGuide(.scrcpy)
+            return
         }
         do {
             try ScrcpyLauncher.launch(executable: scrcpy, serial: device.serial,
