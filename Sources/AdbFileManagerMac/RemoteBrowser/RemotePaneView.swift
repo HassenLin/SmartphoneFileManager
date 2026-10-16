@@ -170,16 +170,17 @@ struct RemotePaneView: View {
     private var table: some View {
         @Bindable var model = model
         return Table(of: RemoteFile.self, selection: $model.selection) {
+            // 名稱欄不給 ideal，吸收剩餘寬度；其餘欄固定窄寬，窗格窄時不出現水平捲軸
             TableColumn("Name") { FileNameCell(entry: $0) }
-                .width(min: 180, ideal: 280)
+                .width(min: 120)
             TableColumn("Size") { Text($0.sizeText).monospacedDigit().foregroundStyle(.secondary) }
-                .width(min: 60, ideal: 80, max: 110)
+                .width(68)
             TableColumn("Modified") { Text(FileDateFormat.string($0.modified)).monospacedDigit().foregroundStyle(.secondary) }
-                .width(min: 110, ideal: 130, max: 160)
+                .width(132)
             TableColumn("Permissions") {
                 Text($0.permissions).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
             }
-            .width(min: 80, ideal: 90, max: 120)
+            .width(78)
         } rows: {
             ForEach(model.visibleFiles) { file in
                 TableRow(file).itemProvider { app.dragProvider(for: file) }

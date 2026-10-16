@@ -54,7 +54,7 @@ tools/                      make-app.sh、make-icon.swift、AppIcon.icns、gen-s
 ## 狀態
 
 - `swift build` 零錯誤零警告；`swift test` 29/29 通過；`.app` 可組出並啟動、裝置輪詢正常、無殭屍行程。
-- **待實機驗收**：需一台已授權的 Android 裝置（開發時接的裝置為 unauthorized），以及 UI 截圖驗證（本次 session 無螢幕錄製權限）。
+- 已以實機（Palma）截圖確認雙窗格瀏覽；**待驗收**：上傳/下載/編輯/刪除、終端機、App 管理等互動功能。
 
 ## 更動紀錄
 

@@ -130,6 +130,7 @@
 "Free" = "可用";
 "Full" = "已充飽";
 "General" = "一般";
+"Go to Home Folder" = "前往個人專屬資料夾";
 "Go to Parent Folder" = "前往上層資料夾";
 "Good" = "良好";
 "Group" = "群組";
@@ -192,6 +193,7 @@
 "Open" = "打開";
 "Open %@" = "打開 %@";
 "Open / Edit" = "打開／編輯";
+"Open Privacy Settings" = "打開隱私權設定";
 "Open Settings…" = "打開設定…";
 "Open with Default App" = "以預設 App 打開";
 "Opening" = "正在打開";
@@ -296,6 +298,7 @@
 "^C (not supported in shell mode without a TTY; type exit to leave)\n" = "^C（無 TTY 的 shell 模式不支援中斷；輸入 exit 離開）\n";
 "chmod %@" = "chmod %@";
 "default" = "預設";
+"macOS privacy protection blocks this folder. Choose it in the open panel to grant access, or allow it in System Settings → Privacy & Security → Files and Folders." = "此資料夾受 macOS 隱私保護。請用「選擇資料夾…」在開啟面板中選取以授權，或到 系統設定 → 隱私權與安全性 → 檔案與資料夾 允許存取。";
 "scrcpy not found. Install it with “brew install scrcpy” or set its path in Settings." = "找不到 scrcpy。請執行「brew install scrcpy」安裝，或在設定中指定路徑。";
 "scrcpy path (empty = auto-detect)" = "scrcpy 路徑（空白＝自動偵測）";
 "unlimited" = "不限";

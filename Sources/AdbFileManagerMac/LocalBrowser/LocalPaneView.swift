@@ -67,12 +67,12 @@ struct LocalPaneView: View {
 
     private var pathComponents: [(title: String, target: String)] {
         var result: [(String, String)] = []
-        var url = model.directory
-        while true {
-            result.insert((url.path == "/" ? "/" : url.lastPathComponent, url.path), at: 0)
-            let parent = url.deletingLastPathComponent()
-            if parent.path == url.path { break }
-            url = parent
+        // 以路徑字串拆段，避免 URL.deletingLastPathComponent() 在根目錄產生 "/.."
+        var current = ""
+        result.append(("/", "/"))
+        for part in model.directory.path.split(separator: "/") {
+            current += "/" + part
+            result.append((String(part), current))
         }
         return result
     }
@@ -83,13 +83,7 @@ struct LocalPaneView: View {
                 Button(title) { model.navigate(to: url) }
             }
             Divider()
-            Button("Choose Folder…") {
-                let panel = NSOpenPanel()
-                panel.canChooseDirectories = true
-                panel.canChooseFiles = false
-                panel.directoryURL = model.directory
-                if panel.runModal() == .OK, let url = panel.url { model.navigate(to: url) }
-            }
+            Button("Choose Folder…") { model.chooseFolder() }
         } label: {
             Image(systemName: "sidebar.squares.left")
         }
@@ -112,7 +106,20 @@ struct LocalPaneView: View {
     @ViewBuilder
     private var content: some View {
         if let error = model.error {
-            ContentUnavailableView("Cannot open folder", systemImage: "exclamationmark.triangle", description: Text(error))
+            ContentUnavailableView {
+                Label("Cannot open folder", systemImage: model.isPermissionError ? "lock.shield" : "exclamationmark.triangle")
+            } description: {
+                Text(error)
+                if model.isPermissionError {
+                    Text("macOS privacy protection blocks this folder. Choose it in the open panel to grant access, or allow it in System Settings → Privacy & Security → Files and Folders.")
+                }
+            } actions: {
+                Button("Choose Folder…") { model.chooseFolder() }
+                Button("Go to Home Folder") { model.navigate(to: FileManager.default.homeDirectoryForCurrentUser) }
+                if model.isPermissionError {
+                    Button("Open Privacy Settings") { model.openPrivacySettings() }
+                }
+            }
         } else {
             table.overlay {
                 if model.files.isEmpty { Text("Empty folder").foregroundStyle(.secondary) }
@@ -123,12 +130,13 @@ struct LocalPaneView: View {
     private var table: some View {
         @Bindable var model = model
         return Table(of: LocalFile.self, selection: $model.selection) {
+            // 名稱欄不給 ideal，吸收剩餘寬度；其餘欄固定窄寬，窗格窄時不出現水平捲軸
             TableColumn("Name") { FileNameCell(entry: $0) }
-                .width(min: 160, ideal: 240)
+                .width(min: 120)
             TableColumn("Size") { Text($0.sizeText).monospacedDigit().foregroundStyle(.secondary) }
-                .width(min: 60, ideal: 80, max: 110)
+                .width(68)
             TableColumn("Modified") { Text(FileDateFormat.string($0.modified)).monospacedDigit().foregroundStyle(.secondary) }
-                .width(min: 110, ideal: 130, max: 160)
+                .width(132)
         } rows: {
             ForEach(model.files) { file in
                 TableRow(file).itemProvider { NSItemProvider(contentsOf: file.url) }

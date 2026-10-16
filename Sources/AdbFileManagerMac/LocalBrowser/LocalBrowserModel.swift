@@ -24,10 +24,32 @@ final class LocalBrowserModel {
         let saved = UserDefaults.standard.string(forKey: SettingsKey.defaultExportDirectory)
         let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
             ?? FileManager.default.homeDirectoryForCurrentUser
-        if let saved, FileManager.default.fileExists(atPath: saved) {
-            directory = URL(fileURLWithPath: saved, isDirectory: true)
+        let preferred = saved.flatMap { FileManager.default.fileExists(atPath: $0) ? URL(fileURLWithPath: $0, isDirectory: true) : nil }
+            ?? downloads
+        // 「下載項目／文件／桌面」受 macOS 隱私保護（TCC）：使用者拒絕或尚未授權時讀取會失敗。
+        // 起始資料夾讀不到就退回個人專屬資料夾（不受保護），不要一打開就是錯誤畫面。
+        if (try? FileManager.default.contentsOfDirectory(atPath: preferred.path)) != nil {
+            directory = preferred
         } else {
-            directory = downloads
+            directory = FileManager.default.homeDirectoryForCurrentUser
+        }
+    }
+
+    /// 目前錯誤是否為 macOS 隱私權限拒絕（可引導使用者到系統設定或以開啟面板授權）
+    private(set) var isPermissionError = false
+
+    /// 以開啟面板選資料夾：使用者在面板中明確選取，系統即視為授權存取
+    func chooseFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.directoryURL = directory
+        if panel.runModal() == .OK, let url = panel.url { navigate(to: url) }
+    }
+
+    func openPrivacySettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders") {
+            NSWorkspace.shared.open(url)
         }
     }
 
@@ -47,9 +69,12 @@ final class LocalBrowserModel {
                 options: showHidden ? [] : [.skipsHiddenFiles])
             files = sortType.sorted(urls.map(LocalFile.init))
             error = nil
+            isPermissionError = false
         } catch {
             files = []
             self.error = error.localizedDescription
+            let nsError = error as NSError
+            isPermissionError = nsError.domain == NSCocoaErrorDomain && nsError.code == NSFileReadNoPermissionError
         }
         let ids = Set(files.map(\.id))
         selection.formIntersection(ids)
