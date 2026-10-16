@@ -457,12 +457,16 @@ final class AppModel {
         return provider
     }
 
-    /// 放下到窗格：自有項目 → FileTransfer（拷貝）；Finder 檔案 → 從 Mac 拷貝。
+    /// 放下到窗格：自有項目 → FileTransfer；Finder 檔案 → 從 Mac 拷貝。
+    /// 與 Finder 相同：**同一來源**（例如左右都是同一台 iPhone）預設為移動，走原生 mv、
+    /// 不經 Mac 中繼；按住 Option 才是拷貝。不同來源一律拷貝。
     /// 拖回自己所在的同一資料夾視為不動作，避免誤觸產生副本。
     func handleDrop(_ providers: [NSItemProvider], on side: PaneSide, directory: String? = nil) -> Bool {
         let browser = pane(side)
         guard browser.source != nil else { return false }
         let target = directory ?? browser.path
+        // 放下當下的修飾鍵（之後進入 Task 就讀不到了）
+        let optionHeld = NSEvent.modifierFlags.contains(.option)
         Task {
             var payloads: [FilePayload] = []
             var urls: [URL] = []
@@ -476,16 +480,19 @@ final class AppModel {
                     urls.append(url)
                 }
             }
-            if !urls.isEmpty {
-                payloads.append(FilePayload(source: .mac, items: urls.map(Self.macItem), move: false))
-            }
-            // 依來源分組，各自一次傳輸
+            // 依來源分組，各自一次傳輸；只有本 app 窗格拖出的同來源項目才是移動
             for (sourceID, group) in Dictionary(grouping: payloads, by: \.source) {
                 let items = group.flatMap(\.items).filter {
                     !(sourceID == browser.sourceID && RemotePath.parent(of: $0.path) == RemotePath.normalize(target))
                 }
-                transfer(items, from: sourceID, to: side, directory: target, move: false)
+                let move = sourceID == browser.sourceID && !optionHeld
+                transfer(items, from: sourceID, to: side, directory: target, move: move)
             }
+            // Finder 拖進來的檔案一律拷貝，不搬走使用者在 Finder 的原檔
+            let finderItems = urls.map(Self.macItem).filter {
+                !(browser.sourceID == .mac && RemotePath.parent(of: $0.path) == RemotePath.normalize(target))
+            }
+            transfer(finderItems, from: .mac, to: side, directory: target, move: false)
         }
         return true
     }

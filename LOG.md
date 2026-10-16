@@ -1,5 +1,11 @@
 # LOG
 
+- 2026-10-16｜**同一裝置拖放改為移動**
+  - 原本拖放一律為拷貝（`handleDrop` 寫死 `move: false`），左右窗格同一台 iPhone 互拖時會經 Mac 讀出再寫回。
+    改為與 Finder 相同：同一來源預設移動（`FileTransfer` → `source.move`，原生 mv），按住 Option 為拷貝；
+    不同來源、Finder 拖入的檔案仍為拷貝（不搬走 Finder 原檔）。
+  - 限制：iPhone 媒體區 ⇄ App、App ⇄ App 屬不同 AFC 服務，沒有原生 mv，仍需經 Mac 中繼。
+
 - 2026-10-16｜**工作區搬家**：`AdbFileManager/` → `SmartphoneFileManager/`
   （以 ditto 複製，Claude Code session／記憶一併複製；採「先複製、驗證後再刪舊目錄」，不再用改名腳本）。
   - 驗證：工作樹乾淨、檔案數一致（472，不含 `.build`）；新路徑重建後 `swift test` 40 項通過，`make-app.sh` 組出 app 可啟動。
