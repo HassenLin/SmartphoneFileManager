@@ -1,5 +1,10 @@
 # LOG
 
+- 2026-10-16｜**README 加入功能截圖**
+  - `docs/screenshots/`：主畫面、工作面板、衝突對話框（寬 1600px）；裝置序號、裝置名稱、Team ID／bundle ID、個人檔名與本機路徑皆打像素化馬賽克，並放大檢查邊界。
+  - 工作面板與衝突對話框以示範資料拍攝；拍攝時透過 UI 驗證 Android → Mac 續傳（47.68MB 接續至 120MB，兩端 MD5 一致）。
+  - 新增 `docs/README.md`（截圖說明與打碼規則）。
+
 - 2026-10-16｜**建置需要完整 Xcode：自動選用 Xcode 工具鏈**
   - 另一台 Mac pull 後編譯失敗：`plugin for module 'SwiftUIMacros' not found`。新版 SDK 的 SwiftUI 以巨集實作 `@State` 等，
     巨集外掛 `libSwiftUIMacros.dylib` 只在 Xcode 內（Command Line Tools 沒有）；該機 xcode-select 指向 Command Line Tools 或未裝 Xcode。

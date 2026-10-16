@@ -14,6 +14,20 @@
 - **發佈**：自用、ad-hoc 簽章、App Sandbox 關閉；**語系**：English／繁體中文／简体中文（跟隨系統語言）
 - **安裝導引**：缺 adb、libimobiledevice、scrcpy 時於 app 內顯示步驟、官方下載連結與一鍵安裝指令（輔助說明 → 安裝導引）
 
+## 畫面
+
+![主畫面：左窗格 iPhone App 文件、右窗格 Android](docs/screenshots/main.png)
+
+**工作面板**：底部可收合，樹狀展開到檔案；同一台裝置的工作依序執行（第二個排隊中）
+
+![工作面板：進行中與排隊中的工作，展開到檔案層級的進度](docs/screenshots/tasks.png)
+
+**衝突對話框**：目的已有同名檔案時並列大小與日期；目的較小時可從中斷處續傳
+
+![衝突對話框：續傳／覆寫／保留兩者／略過](docs/screenshots/conflict.png)
+
+（截圖中的裝置序號、裝置名稱、開發者 ID 與個人檔名已打馬賽克）
+
 ## 功能
 
 | 區塊 | 說明 |
@@ -69,6 +83,7 @@ Sources/SmartphoneFileManager/ L4：SwiftUI app
   Browser/                    BrowserModel（窗格狀態，左右共用）、BrowserPaneView、對話框
   Setup/                      SetupGuideView（安裝導引）
 Tests/SFMCoreTests/           Swift Testing（含 FakeSource 引擎測試、實機測試）
+docs/                         README 截圖（docs/screenshots，敏感資料已打馬賽克）
 Localization/                 *.lproj（tools/gen-strings.py 產生：繁中＝zh-Hant.json 人工維護；簡中＝hant2hans.swift 自動轉換＋overrides）
 vendor/                       clipboard-helper.dex.b64（adb 可本機放置於此，不收錄於 repo）
 tools/                        install.sh、make-app.sh、make-icon.swift、AppIcon.icns、gen-strings.py、hant2hans.swift、zh-Hant.json、zh-Hans.overrides.json
