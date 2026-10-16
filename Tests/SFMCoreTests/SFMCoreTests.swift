@@ -287,7 +287,8 @@ struct RsyncTests {
     }
 
     @Test func summarizesItemizedOutput() {
-        let summary = RsyncCommand.summarize(["cd+++++++++ dir/", ">f+++++++++ dir/a.txt", ">f.st...... b.txt", "*deleting   old.txt"])
+        let summary = RsyncCommand.summarize(["cd+++++++++ dir/", ">f+++++++++ dir/a.txt", ">f.st...... b.txt", "*deleting   old.txt",
+                                              ">f+++++++ ._b.txt", ">f+++++++ dir/._a.txt"])
         #expect(summary == RsyncCommand.Summary(transferred: 2, deleted: 1))
     }
 

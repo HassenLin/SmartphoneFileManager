@@ -50,10 +50,14 @@ public struct RsyncCommand: Sendable {
         return args
     }
 
-    /// `--itemize-changes` 的行：`>f+++++++++ a.txt`（傳檔）、`cd+++++++++ dir/`（建資料夾）、`*deleting   old.txt`
+    /// `--itemize-changes` 的行：`>f+++++++++ a.txt`（傳檔）、`cd+++++++++ dir/`（建資料夾）、`*deleting   old.txt`。
+    /// openrsync 的 `--extended-attributes` 會把延伸屬性當成 AppleDouble 檔（`._名稱`）逐一列出，
+    /// 實際在目的端合併回延伸屬性、不會留下檔案，所以不計入（實測同步 10 個檔案時多列出 13 行 `._`）。
     static func summarize(_ lines: [String]) -> Summary {
         var summary = Summary()
         for line in lines {
+            let path = line.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true).last.map(String.init) ?? ""
+            if RemotePath.name(of: path.hasSuffix("/") ? String(path.dropLast()) : path).hasPrefix("._") { continue }
             if line.hasPrefix("*deleting") { summary.deleted += 1 }
             else if line.hasPrefix(">f") || line.hasPrefix("<f") { summary.transferred += 1 }
         }
