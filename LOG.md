@@ -1,5 +1,34 @@
 # LOG
 
+- 2026-10-16｜**同步方向改「左 ← 右」，新增雙向同步「左 ↔ 右」；移除窗格的新增資料夾獨立按鈕**
+  - 雙向：先一次比對兩邊再執行（`SyncPlanner.twoWayDiff`），較新的一方覆蓋另一方、只在一邊的拷到另一邊；
+    右 → 左的節點標 `reversed`，執行器以對調來源／目的的執行器處理。拆成兩個單向工作會出錯：裝置無法保留修改時間，第二趟會把剛傳過去的檔案判為較新而傳回。
+  - 分不出新舊（大小不同、時間相近或沒有時間）與「檔案 ↔ 資料夾同名」：不動，標為略過並說明。雙向不刪除（沒有上次同步紀錄，無法分辨刪除與新增）。
+  - Mac ↔ Mac 雙向：兩趟 `rsync -a --update`（rsync 保留時間，第二趟不會回傳）。
+  - 新增資料夾已有（＋選單、右鍵、⇧⌘N），移除上一版加的獨立按鈕。
+  - 測試 63 項通過（雙向較新者勝、無法判斷時略過、實際執行系統 rsync 雙向）。
+
+- 2026-10-16｜**書籤兩種（資料夾書籤、同步專案）＋類似 rsync 的同步**
+  - 書籤庫 `BookmarkLibrary`（Application Support/bookmarks.json）：資料夾書籤含來源（任何裝置都可用，原本只有 Android）、同步專案（左右資料夾、方向、選項）。
+    首次匯入舊版 Android 書籤（無裝置序號 → 開啟時用窗格目前或第一台 Android）；舊檔不修改。
+  - 同步為工作佇列的新工作種類 `.sync`：規劃時比對（`SyncPlanner`：新增、大小不同或來源較新才傳；可刪除多餘），
+    新節點 `.deleteTarget`；需要更新的同名檔一律覆寫（工作預設衝突策略 overwrite）。
+    無法跨來源保留修改時間，所以比對用「來源較新」（容許 2 秒）而非 rsync 的「時間不同」。
+  - 兩邊都是 Mac：單一 `.rsync` 節點執行 rsync（`RsyncCommand`，`-a --itemize-changes`，系統 openrsync 與 Homebrew rsync 3 的延伸屬性參數不同，自動判斷）。
+    其他組合依能力（`SyncCapabilities`）只顯示做得到的選項。
+  - 工具列「同步」彈出視窗：專案名稱、方向、選項、取消／儲存／同步（同步前若有變更先儲存）。
+  - 測試 60 項通過（同步規劃、重複同步無動作、重疊拒絕、rsync 參數、實際執行系統 rsync）。
+
+- 2026-10-16｜**工具列改為 Android／iPhone 彈出視窗；新增 iPhone 工具、Mac 雲端硬碟位置、新增資料夾快捷**
+  - 工具列原本一排 Android 工具按鈕＋裝置選單，改為「Android」「iPhone」兩顆按鈕，各自彈出視窗（目標裝置選擇＋工具清單）。
+    共用 `DeviceToolsButton`；點工具時先關 popover 再開 sheet，避免兩個呈現同時發生。
+  - iPhone 工具（`IPhoneDeviceService`，libimobiledevice）：裝置資訊（ideviceinfo 預設／battery／disk_usage 網域）、
+    重新開機／關機（idevicediagnostics）、App 清單／安裝 .ipa／解除安裝（ideviceinstaller）。
+    截圖不提供：實測 iOS 27 `idevicescreenshot` 回 `Invalid service`（iOS 17 起需 CoreDevice 通道）。
+  - Mac 窗格加「位置」選單：iCloud 雲碟、`~/Library/CloudStorage/*`（Google Drive、OneDrive…）、`/Volumes/*`；這些藏在隱藏的 ~/Library 下，原本瀏覽不到。
+  - 新增資料夾：窗格標題列獨立按鈕；檔案選單 ⇧⌘N 作用在最後操作的窗格（`AppModel.activeSide`）。
+  - 測試 54 項通過（新增 ideviceinfo／App 清單／雲端名稱解析）；組 app 後確認 iPhone 彈出視窗可列出 Wi-Fi 連線的 iPhone。
+
 - 2026-10-16｜**修正：暫停後資料夾節點仍顯示轉圈；補工作佇列截圖**
   - 暫停時只把中斷的檔案節點轉為 partial，資料夾節點停在 running（面板一直轉圈，像還在傳）。
     抽出 `settleRunningNodes`：暫停與重開 app 載入時一致處理（檔案 → partial、其他 → pending）；佇列測試加入檢查。

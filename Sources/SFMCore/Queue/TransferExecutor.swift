@@ -25,6 +25,19 @@ struct TransferExecutor: Sendable {
     let progress: @Sendable (UUID, Int64) -> Void
     /// 衝突詢問（佇列負責「套用到其餘衝突」的記憶）
     let ask: @Sendable (TransferConflict) async -> ConflictAction
+    /// 同步工作的選項（rsync 節點用）
+    var options: SyncOptions? = nil
+    /// 雙向同步：rsync 以 `--update` 執行（不覆蓋另一邊較新的檔案）
+    var twoWay = false
+    /// 本執行器是否為反方向節點而對調了來源／目的（避免反方向節點再次對調）
+    var isSwapped = false
+
+    /// 反方向節點（雙向同步）用的執行器：來源與目的對調，其餘相同
+    private var swapped: TransferExecutor? {
+        guard let destination else { return nil }
+        return TransferExecutor(jobID: jobID, source: destination, destination: source, staging: staging,
+                                report: report, progress: progress, ask: ask, options: options, twoWay: twoWay, isSwapped: true)
+    }
 
     func run(_ nodes: [TransferNode]) async throws {
         for node in nodes {
@@ -36,16 +49,19 @@ struct TransferExecutor: Sendable {
     /// 回傳節點最終狀態（父資料夾據此決定移動時能否刪除來源）
     private func runNode(_ node: TransferNode) async throws -> NodeState {
         if node.state == .done || node.state == .skipped || node.operation == .rejected { return node.state }
+        if node.reversed == true && !isSwapped, let swapped { return try await swapped.runNode(node) }
         do {
             let state: NodeState
             switch node.operation {
             case .delete: state = try await delete(node)
+            case .deleteTarget: state = try await deleteTarget(node)
+            case .rsync: state = try await rsync(node)
             case .nativeMove: state = try await nativeMove(node)
             case .makeDirectory: state = try await makeDirectory(node)
             case .transferFile: state = try await transferFile(node)
             case .rejected: state = node.state
             }
-            if state != .partial { await report(.state(node.id, state)) }
+            if state != .partial, node.operation != .rsync { await report(.state(node.id, state)) }
             return state
         } catch is CancellationError {
             throw CancellationError()
@@ -60,6 +76,22 @@ struct TransferExecutor: Sendable {
     private func delete(_ node: TransferNode) async throws -> NodeState {
         await report(.state(node.id, .running))
         try await source.delete(node.sourcePath)
+        return .done
+    }
+
+    /// rsync 自己比對與傳輸；完成時把摘要寫進節點訊息（完成提示用）
+    private func rsync(_ node: TransferNode) async throws -> NodeState {
+        await report(.state(node.id, .running))
+        let summary = try await RsyncCommand(options: options ?? SyncOptions(), update: twoWay)
+            .run(from: node.sourcePath, to: node.targetPath)
+        await report(.state(node.id, .done, message: summary.text))
+        return .done
+    }
+
+    private func deleteTarget(_ node: TransferNode) async throws -> NodeState {
+        guard let destination else { return .failed }
+        await report(.state(node.id, .running))
+        try await destination.delete(node.targetPath)
         return .done
     }
 

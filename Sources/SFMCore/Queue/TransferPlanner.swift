@@ -18,6 +18,10 @@ enum TransferPlanner {
             }
         }
         guard let destination, let rawDirectory = job.destinationDirectory else { return [] }
+        if job.kind == .sync, let root = job.items.first {
+            return try await SyncPlanner.plan(from: root.path, to: rawDirectory, source: source, destination: destination,
+                                              options: job.syncOptions ?? SyncOptions(), twoWay: job.syncTwoWay == true)
+        }
         let directory = RemotePath.normalize(rawDirectory)
         let sameSource = source.id == destination.id
         let move = job.kind == .move

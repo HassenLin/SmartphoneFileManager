@@ -22,7 +22,11 @@ struct SmartphoneFileManagerApp: App {
         }
         .defaultSize(width: 1200, height: 760)
         .commands {
-            CommandGroup(replacing: .newItem) { }
+            CommandGroup(replacing: .newItem) {
+                Button("New Folder…") { app.sheet = .newFolder(app.activeSide) }
+                    .keyboardShortcut("n", modifiers: [.command, .shift])
+                    .disabled(app.pane(app.activeSide).source == nil)
+            }
             CommandGroup(replacing: .help) {
                 Button("Setup Guide…") { app.sheet = .setupGuide(.android) }
             }

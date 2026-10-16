@@ -43,9 +43,13 @@
 | 工作佇列 | 拷貝／移動／刪除都進入底部「工作」面板（可收合、可調高度）：樹狀展開到檔案、各自進度；暫停／繼續／停止／移除；每台裝置一次一個工作（不同裝置並行）；**關閉 app 後保留**，重開時為暫停、按繼續才執行 |
 | 衝突與續傳 | 目的已有同名檔案時詢問（類似 FTP）：並列兩邊大小與日期，可選續傳／覆寫／保留兩者／略過，可套用到其餘衝突；資料夾同名則合併。大檔從中斷處續傳：Android（`tail -c`／`exec-in`／`dd`）、MTP（Partial Object）、Mac；iPhone（AFC 無法指定位置）一律重傳 |
 | 傳輸路徑 | 同裝置同檔案系統為原生 mv（瞬間）；其餘逐檔傳輸：同裝置原生 cp（不經 Mac）、跨裝置經 Mac 中繼（暫存於 Application Support，可續傳）；跨檔案系統搬移會預檢空間 |
-| 檔案操作 | 新增資料夾/檔案、改名、權限（Android chmod）、路徑列右鍵拷貝路徑、遞迴搜尋（Android）、書籤（Android）、排序（點名稱／大小／修改日期欄位標題，或排序選單）、篩選 |
+| 檔案操作 | 新增資料夾（＋選單、右鍵、⇧⌘N 作用在最後操作的窗格）/檔案、改名、權限（Android chmod）、路徑列右鍵拷貝路徑、遞迴搜尋（Android）、排序（點名稱／大小／修改日期欄位標題，或排序選單）、篩選 |
 | 編輯器 | 任一來源的文字檔：語法上色、⌘F／⌥⌘F、undo、編碼偵測與切換、無損存檔 |
-| Android 工具 | 終端機（多分頁）、App 管理、裝置資訊、重開機、截圖、寫入剪貼簿、scrcpy 鏡像、無線配對／連線（工具列選擇目標裝置） |
+| Android 工具 | 工具列「Android」按鈕彈出視窗：選擇目標裝置；終端機（多分頁）、App 管理、裝置資訊、重開機、截圖、寫入剪貼簿、scrcpy 鏡像、無線配對／連線 |
+| iPhone 工具 | 工具列「iPhone」按鈕彈出視窗：選擇目標 iPhone；裝置資訊（機型、iOS、電池、儲存空間）、重新開機／關機、App 管理（列出、安裝 .ipa、解除安裝）。iOS 17 起 libimobiledevice 無法截圖，故不提供 |
+| 書籤（兩種） | 窗格的書籤選單：**資料夾書籤**（任何來源，含裝置）與**同步專案**（左右一對資料夾＋方向＋選項）；選同步專案會把左右窗格開到該資料夾並開啟同步視窗。存於 `Application Support/SmartphoneFileManager/bookmarks.json`，首次啟動匯入舊版 `~/.adbfilemanager/bookmarks.json` |
+| 同步（類似 rsync） | 工具列「同步」：彈出視窗含專案名稱、方向（左 → 右／左 ← 右／左 ↔ 右 雙向）、選項與「取消／儲存／同步」；同步時若選項有變先儲存再執行（加入工作佇列，可暫停／繼續）。**兩邊都是 Mac** 直接執行 rsync（`-a`＋檢查碼、延伸屬性、額外參數）；其他組合用內建引擎，提供來源做得到的選項：刪除多餘、隱藏檔、排除樣式、只比大小、略過已存在。雙向：各以較新的檔案為準、不刪除（Mac ↔ Mac 為兩趟 `rsync -a --update`） |
+| Mac 位置 | Mac 窗格的雲朵按鈕：常用資料夾、iCloud 雲碟、Google Drive／OneDrive／Dropbox 等（`~/Library/CloudStorage`）、外接磁碟 |
 
 ## 安裝（另一台 Mac）
 
@@ -59,7 +63,7 @@ git clone <repo> SmartphoneFileManager && cd SmartphoneFileManager
 ## 開發
 
 ```bash
-swift test                                            # 單元測試（51 項，含預設略過的實機測試）
+swift test                                            # 單元測試（63 項，含預設略過的實機測試）
 SFM_LIVE=1 swift test --filter LiveDevice             # 實機整合測試（需 Android + iPhone）
 SFM_LIVE=1 swift test --filter MTPLive                # MTP 實機測試（需 MTP 裝置）
 ./tools/make-app.sh && open .build/SmartphoneFileManager.app
@@ -74,17 +78,21 @@ Sources/CLibMTP/              L0：libmtp 標頭的 C 模組（弱連結）
 Sources/SFMCore/              L1：零 UI 相依，可 swift test
   Process/ProcessRunner       子行程唯一入口（可取消、逾時、串流、不經 shell、不依賴 run loop）
   Adb/                        AdbClient/DeviceConnection、AdbLocator、ShellText 跳脫、Tokenizer
-  Sources/                    FileSource 抽象（含續傳介面 ResumableTransfer）+ Mac／Android／iPhone／MTP 實作
+  Sources/                    FileSource 抽象（含續傳介面 ResumableTransfer）+ Mac／Android／iPhone／MTP 實作；
+                              MacLocations（Mac 位置捷徑：雲端硬碟、磁碟）
   MTP/                        MTPSession（每台裝置一條序列佇列）、MTPDeviceManager（偵測／開啟／釋放）
-  Queue/                      工作佇列：TransferJob（模型與 FSM）、TransferPlanner（展開樹）、
+  Queue/                      工作佇列：TransferJob（模型與 FSM）、TransferPlanner（展開樹）、SyncPlanner（同步比對）、
+                              RsyncCommand（Mac ↔ Mac 同步）、
                               TransferExecutor（逐節點執行、衝突、續傳）、TransferQueue（排程、持久化）
-  Model/                      FileItem、StatParser、SortType、TextCodec、Bookmark
-  Services/                   AppPackage／DeviceInfo／Clipboard／Scrcpy（Android 工具）
+  Model/                      FileItem、StatParser、SortType、TextCodec、Bookmark（舊版）、BookmarkLibrary（書籤＋同步專案）
+  Services/                   AppPackage／DeviceInfo／Clipboard／Scrcpy（Android 工具）、IPhoneDeviceService（iPhone 工具）
   Terminal/                   AdbShellSession（FSM）、ShellOutputFilter、補完
 Sources/SmartphoneFileManager/ L4：SwiftUI app
   App/AppModel                協調者：來源解析、剪貼簿、加入工作佇列、拖放、開啟
   Queue/                      TasksPanel（底部工作面板）、ConflictSheet（衝突對話框）
   Browser/                    BrowserModel（窗格狀態，左右共用）、BrowserPaneView、對話框
+  Main/                       MainWindowView、DeviceToolsPopover（工具列 Android／iPhone 工具彈出視窗）、SyncPopover（同步視窗）
+  IPhone/                     IPhoneInfoView、IPhoneAppsView（iPhone 工具面板）
   Setup/                      SetupGuideView（安裝導引）
 Tests/SFMCoreTests/           Swift Testing（含 FakeSource 引擎測試、實機測試）
 docs/                         README 截圖（docs/screenshots，敏感資料已打馬賽克）
@@ -95,7 +103,7 @@ tools/                        install.sh、make-app.sh、make-icon.swift、AppIc
 
 ## 狀態
 
-- `swift build` 零警告；`swift test` 51/51；實機整合測試（Palma Android + iPhone iOS 27）通過。
+- `swift build` 零警告；`swift test` 63/63；實機整合測試（Palma Android + iPhone iOS 27）通過。
 - 已截圖確認：左 iPhone／右 Android 雙窗格瀏覽。
 - 待手動驗收：UI 上的 ⌘C/⌘X/⌘V、拖放。
 

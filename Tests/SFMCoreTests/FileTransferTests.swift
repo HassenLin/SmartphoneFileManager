@@ -8,6 +8,8 @@ final class FakeStore: @unchecked Sendable {
     var files: [String: Data] = [:]        // 檔案路徑 → 內容
     var directories: Set<String> = ["/"]
     var log: [String] = []
+    /// 檔案修改時間（沒有＝列表不帶時間）。上傳時設為「現在」，模擬裝置無法保留修改時間
+    var modified: [String: Date] = [:]
 
     func with<T>(_ body: (FakeStore) throws -> T) rethrows -> T {
         lock.lock(); defer { lock.unlock() }
@@ -29,7 +31,7 @@ struct FakeSource: FileSource {
             let dirs = s.directories.filter { $0 != "/" && RemotePath.parent(of: $0) == directory }
                 .map { FileItem(path: $0, isDirectory: true) }
             let files = s.files.filter { RemotePath.parent(of: $0.key) == directory }
-                .map { FileItem(path: $0.key, isDirectory: false, size: Int64($0.value.count)) }
+                .map { FileItem(path: $0.key, isDirectory: false, size: Int64($0.value.count), modified: s.modified[$0.key]) }
             return dirs + files
         }
     }
@@ -81,7 +83,10 @@ struct FakeSource: FileSource {
             }
         } else {
             let data = try Data(contentsOf: localURL)
-            store.with { $0.files[path] = data }
+            store.with {
+                $0.files[path] = data
+                if !$0.modified.isEmpty { $0.modified[path] = Date() }
+            }
         }
     }
 

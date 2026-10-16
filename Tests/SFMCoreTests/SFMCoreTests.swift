@@ -229,3 +229,115 @@ struct ProcessRunnerTests {
         #expect(lines == ["[ 10%]", "[ 50%]", "done"])
     }
 }
+
+@Suite("IPhoneDeviceService 解析")
+struct IPhoneDeviceServiceTests {
+    @Test func parsesIdeviceinfo() {
+        let general = IPhoneDeviceService.keyValues([
+            "DeviceName: Test's iPhone", "ProductType: iPhone18,2", "ProductVersion: 27.0",
+            "SomeArray:", " 0: nested", "BuildVersion: 24A437",
+        ])
+        let battery = IPhoneDeviceService.keyValues(["BatteryCurrentCapacity: 78", "BatteryIsCharging: false"])
+        let disk = IPhoneDeviceService.keyValues(["TotalDataCapacity: 1000", "AmountDataAvailable: 400"])
+        let info = IPhoneDeviceService.parse(general: general, battery: battery, disk: disk)
+        #expect(info.name == "Test's iPhone")
+        #expect(info.iosVersion == "27.0")
+        #expect(info.buildVersion == "24A437")
+        #expect(info.batteryLevel == 78)
+        #expect(!info.isCharging)
+        #expect(info.storage.usedBytes == 600)
+        #expect(general[" 0"] == nil)
+    }
+
+    @Test func parsesAppList() throws {
+        let xml = """
+        some log line
+        <?xml version="1.0" encoding="UTF-8"?>
+        <plist version="1.0"><array>
+        <dict><key>CFBundleIdentifier</key><string>b.app</string><key>CFBundleDisplayName</key><string>Beta</string>
+        <key>CFBundleShortVersionString</key><string>1.2</string></dict>
+        <dict><key>CFBundleIdentifier</key><string>a.app</string><key>CFBundleName</key><string>Alpha</string></dict>
+        </array></plist>
+        """
+        let apps = try IPhoneDeviceService.parseApps(Data(xml.utf8))
+        #expect(apps.map(\.name) == ["Alpha", "Beta"])
+        #expect(apps[1].version == "1.2")
+    }
+}
+
+@Suite("MacLocations")
+struct MacLocationsTests {
+    @Test func cloudDisplayNames() {
+        #expect(MacFileSource.cloudDisplayName("GoogleDrive-me@gmail.com") == "Google Drive (me@gmail.com)")
+        #expect(MacFileSource.cloudDisplayName("OneDrive-chicony.com (2026-6-6)") == "OneDrive (chicony.com (2026-6-6))")
+        #expect(MacFileSource.cloudDisplayName("Dropbox") == "Dropbox")
+    }
+}
+
+@Suite("Rsync")
+struct RsyncTests {
+    @Test func buildsArguments() throws {
+        let options = SyncOptions(deleteExtraneous: true, includeHidden: false, excludePatterns: ["*.tmp"],
+                                  checksum: true, extendedAttributes: true, extraArguments: "--max-size=1G")
+        let args = try RsyncCommand(options: options).arguments(from: "/a/src", to: "/b/dst", openrsync: true)
+        #expect(args == ["-a", "--itemize-changes", "--checksum", "--extended-attributes", "--delete",
+                         "--exclude=.*", "--exclude=*.tmp", "--max-size=1G", "/a/src/", "/b/dst"])
+        let brew = try RsyncCommand(options: options).arguments(from: "/a", to: "/b", openrsync: false)
+        #expect(brew.contains("--xattrs"))
+    }
+
+    @Test func summarizesItemizedOutput() {
+        let summary = RsyncCommand.summarize(["cd+++++++++ dir/", ">f+++++++++ dir/a.txt", ">f.st...... b.txt", "*deleting   old.txt"])
+        #expect(summary == RsyncCommand.Summary(transferred: 2, deleted: 1))
+    }
+
+    @Test func excludesMatchGlobAndHidden() {
+        let options = SyncOptions(includeHidden: false, excludePatterns: ["*.tmp", "node_modules"])
+        #expect(options.excludes(".DS_Store") && options.excludes("a.tmp") && options.excludes("node_modules"))
+        #expect(!options.excludes("a.txt"))
+    }
+
+    /// 實際執行系統 rsync（Mac ↔ Mac）：只傳變更、刪除多餘
+    @Test func runsRealRsync() async throws {
+        let fm = FileManager.default
+        let base = fm.temporaryDirectory.appendingPathComponent("afm-rsync-test-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: base) }
+        let src = base.appendingPathComponent("src"), dst = base.appendingPathComponent("dst")
+        try fm.createDirectory(at: src.appendingPathComponent("sub"), withIntermediateDirectories: true)
+        try fm.createDirectory(at: dst, withIntermediateDirectories: true)
+        try Data("a".utf8).write(to: src.appendingPathComponent("a.txt"))
+        try Data("b".utf8).write(to: src.appendingPathComponent("sub/b.txt"))
+        try Data("old".utf8).write(to: dst.appendingPathComponent("old.txt"))
+        let command = RsyncCommand(options: SyncOptions(deleteExtraneous: true))
+        let first = try await command.run(from: src.path, to: dst.path)
+        #expect(first == RsyncCommand.Summary(transferred: 2, deleted: 1))
+        #expect(fm.fileExists(atPath: dst.appendingPathComponent("sub/b.txt").path))
+        #expect(!fm.fileExists(atPath: dst.appendingPathComponent("old.txt").path))
+        let second = try await command.run(from: src.path, to: dst.path)
+        #expect(second == RsyncCommand.Summary())
+    }
+
+    /// 雙向（Mac ↔ Mac）：兩趟 `--update`，各自較新的留下，第二次同步無動作
+    @Test func runsRealTwoWayRsync() async throws {
+        let fm = FileManager.default
+        let base = fm.temporaryDirectory.appendingPathComponent("afm-rsync2-test-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: base) }
+        let left = base.appendingPathComponent("L"), right = base.appendingPathComponent("R")
+        try fm.createDirectory(at: left, withIntermediateDirectories: true)
+        try fm.createDirectory(at: right, withIntermediateDirectories: true)
+        try Data("L".utf8).write(to: left.appendingPathComponent("l.txt"))
+        try Data("R".utf8).write(to: right.appendingPathComponent("r.txt"))
+        try Data("old".utf8).write(to: left.appendingPathComponent("both.txt"))
+        try Data("newer".utf8).write(to: right.appendingPathComponent("both.txt"))
+        try fm.setAttributes([.modificationDate: Date(timeIntervalSinceNow: -3600)],
+                             ofItemAtPath: left.appendingPathComponent("both.txt").path)
+        let command = RsyncCommand(options: SyncOptions(deleteExtraneous: true), update: true)
+        _ = try await command.run(from: left.path, to: right.path)
+        _ = try await command.run(from: right.path, to: left.path)
+        #expect(fm.fileExists(atPath: right.appendingPathComponent("l.txt").path))
+        #expect(fm.fileExists(atPath: left.appendingPathComponent("r.txt").path))
+        #expect(try Data(contentsOf: left.appendingPathComponent("both.txt")) == Data("newer".utf8))
+        let again = try await command.run(from: left.path, to: right.path)
+        #expect(again == RsyncCommand.Summary())
+    }
+}

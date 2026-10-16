@@ -3,8 +3,8 @@ import SwiftUI
 
 /// 裝置清單輪詢：Android（`adb devices -l`）、iPhone（`idevice_id -l`）與 MTP（libmtp 偵測 USB），每 3 秒一次。
 ///
-/// `selectedSerial` 是工具列「裝置工具」（終端機、App、截圖…）的目標 Android 裝置；
-/// 兩個檔案窗格各自選擇來源，與它無關。
+/// `selectedSerial`／`selectedIPhoneUDID` 是工具列「Android 工具」「iPhone 工具」的目標裝置；
+/// 兩個檔案窗格各自選擇來源，與它們無關。
 /// 原版每次輪詢還會對每台裝置跑 `ip route` 查 Wi-Fi 狀態——裝置多時很貴，
 /// 這版改為只在開啟「無線連線」面板時才查詢。
 @MainActor
@@ -16,6 +16,8 @@ final class DeviceMonitor {
     /// MTP 裝置開啟失敗的訊息（例如被其他 app 佔用），顯示在 MTP 窗格的未連線畫面
     private(set) var mtpErrors: [String] = []
     var selectedSerial: String?
+    /// 工具列「iPhone 工具」的目標 iPhone（UDID）
+    var selectedIPhoneUDID: String?
     /// adb 本身無法執行（找不到、權限）時的錯誤；有值時 UI 顯示設定提示
     private(set) var adbError: String?
     /// libimobiledevice 是否已安裝（未安裝時來源選單顯示安裝提示）
@@ -25,6 +27,12 @@ final class DeviceMonitor {
     @ObservationIgnored private var iphoneNames: [String: String] = [:]
 
     var selectedDevice: AdbDeviceInfo? { devices.first { $0.serial == selectedSerial } }
+    var selectedIPhone: IPhoneDeviceInfo? { iphones.first { $0.udid == selectedIPhoneUDID } }
+
+    /// 工具列目標 iPhone 的工具服務；未選取時為 nil
+    var iphoneService: IPhoneDeviceService? {
+        selectedIPhone.map { IPhoneDeviceService(udid: $0.udid, network: $0.network) }
+    }
 
     /// 工具列目標裝置的連線；未選取或狀態不是 `device`（如未授權）時為 nil
     var connection: DeviceConnection? {
@@ -61,6 +69,9 @@ final class DeviceMonitor {
         let phones = await IPhoneDeviceInfo.list(knownNames: iphoneNames)
         for phone in phones { iphoneNames[phone.udid] = phone.name }
         if phones != iphones { iphones = phones }
+        if selectedIPhoneUDID == nil || !phones.contains(where: { $0.udid == selectedIPhoneUDID }) {
+            selectedIPhoneUDID = phones.first?.udid
+        }
 
         let mtp = await MTPDeviceManager.shared.refresh()
         if mtp != mtpDevices { mtpDevices = mtp }

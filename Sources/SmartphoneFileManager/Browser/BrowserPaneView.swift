@@ -29,6 +29,8 @@ struct BrowserPaneView: View {
         }
         // HSplitView 不會自動把子視圖撐滿高度，必須明確給 maxHeight
         .frame(minWidth: 360, maxWidth: .infinity, maxHeight: .infinity)
+        // 選取變動＝使用者正在操作這個窗格（選單列指令的目標）
+        .onChange(of: model.selection) { _, _ in app.activeSide = side }
     }
 
     // MARK: 標題列
@@ -53,6 +55,7 @@ struct BrowserPaneView: View {
                         onSubmit: { model.go(toTyped: $0) }, fullPath: model.path)
                 Button { model.reload() } label: { Image(systemName: "arrow.clockwise") }
                     .help("Refresh")
+                // 新增資料夾也可用選單列 ⇧⌘N（作用在最後操作的窗格，`AppModel.activeSide`）
                 Menu {
                     Button("New Folder…") { app.sheet = .newFolder(side) }
                     Button("New File…") { app.sheet = .newFile(side) }
@@ -62,8 +65,9 @@ struct BrowserPaneView: View {
                 .menuIndicator(.hidden)
                 .fixedSize()
                 .help("New")
-                if model.sourceID?.kind == .android { bookmarkMenu }
+                if model.sourceID != nil { bookmarkMenu }
                 if model.sourceID == .mac {
+                    macLocationsMenu
                     Button { NSWorkspace.shared.activateFileViewerSelecting(model.selectedFiles.isEmpty
                         ? [URL(fileURLWithPath: model.path)] : model.selectedFiles.map { URL(fileURLWithPath: $0.path) })
                     } label: { Image(systemName: "folder") }
@@ -118,34 +122,76 @@ struct BrowserPaneView: View {
         return result
     }
 
-    private var bookmarkMenu: some View {
+    /// Mac 窗格的位置捷徑：常用資料夾、iCloud／Google Drive／OneDrive 等雲端硬碟（藏在 ~/Library 下）、磁碟
+    private var macLocationsMenu: some View {
         Menu {
-            if app.bookmarks.contains(path: model.path) {
-                Button("Remove Bookmark for This Folder") {
-                    if let bookmark = app.bookmarks.bookmarks.first(where: { $0.path == model.path }) {
-                        try? app.bookmarks.remove(bookmark)
-                    }
-                }
-            } else {
-                Button("Bookmark This Folder…") { app.sheet = .addBookmark(side) }
-            }
-            if !app.bookmarks.bookmarks.isEmpty {
-                Divider()
-                ForEach(app.bookmarks.bookmarks) { bookmark in
-                    Menu(bookmark.name) {
-                        Button("Open \(bookmark.path)") { model.navigate(to: bookmark.path) }
-                        Button("Delete Bookmark", role: .destructive) { try? app.bookmarks.remove(bookmark) }
-                    } primaryAction: {
-                        model.navigate(to: bookmark.path)
+            let locations = MacFileSource.locations()
+            ForEach([MacLocation.Kind.folder, .cloud, .volume], id: \.self) { kind in
+                let group = locations.filter { $0.kind == kind }
+                if !group.isEmpty {
+                    Section {
+                        ForEach(group) { location in
+                            Button { model.navigate(to: location.path) } label: {
+                                Label(location.name, systemImage: kind == .cloud ? "icloud" : kind == .volume ? "externaldrive" : "folder")
+                            }
+                        }
                     }
                 }
             }
         } label: {
-            Image(systemName: app.bookmarks.contains(path: model.path) ? "bookmark.fill" : "bookmark")
+            Image(systemName: "icloud")
         }
         .menuIndicator(.hidden)
         .fixedSize()
-        .help("Bookmarks")
+        .help("Locations (cloud drives, volumes)")
+    }
+
+    /// 書籤選單（兩種）：資料夾書籤（任何來源）、同步專案（左右一對資料夾）
+    private var bookmarkMenu: some View {
+        let here = app.location(of: side)
+        let current = here.flatMap { app.bookmarks.folderBookmark(at: $0) }
+        return Menu {
+            if let current {
+                Button("Remove Bookmark for This Folder") { try? app.bookmarks.removeFolder(current) }
+            } else {
+                Button("Bookmark This Folder…") { app.sheet = .addBookmark(side) }
+            }
+            if !app.bookmarks.folders.isEmpty {
+                Section("Bookmarks") {
+                    ForEach(app.bookmarks.folders) { bookmark in
+                        Menu {
+                            Button("Open \(bookmark.location.path)") { app.open(bookmark.location, in: side) }
+                            Button("Delete Bookmark", role: .destructive) { try? app.bookmarks.removeFolder(bookmark) }
+                        } label: {
+                            Label(bookmark.name, systemImage: app.symbol(for: bookmark.location.source))
+                        } primaryAction: {
+                            app.open(bookmark.location, in: side)
+                        }
+                    }
+                }
+            }
+            Section("Sync Projects") {
+                ForEach(app.bookmarks.syncProjects) { project in
+                    Menu {
+                        Button("Open…") { app.openSyncProject(project) }
+                        Button("Delete Sync Project", role: .destructive) { try? app.bookmarks.removeSyncProject(project) }
+                    } label: {
+                        Label(project.name, systemImage: "arrow.triangle.2.circlepath")
+                    } primaryAction: {
+                        app.openSyncProject(project)
+                    }
+                }
+                Button("New Sync Project…") {
+                    app.syncProjectToEdit = nil
+                    app.isSyncPopoverPresented = true
+                }
+            }
+        } label: {
+            Image(systemName: current != nil ? "bookmark.fill" : "bookmark")
+        }
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Bookmarks and sync projects")
     }
 
     // MARK: 內容

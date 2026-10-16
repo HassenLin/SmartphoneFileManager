@@ -133,6 +133,7 @@ private struct JobRow: View {
         case .copy: return "doc.on.doc"
         case .move: return "arrow.right.doc.on.clipboard"
         case .delete: return "trash"
+        case .sync: return "arrow.triangle.2.circlepath"
         }
     }
 
@@ -143,6 +144,9 @@ private struct JobRow: View {
         case .copy: return String(localized: "Copy \(count) item(s): \(from) → \(app.title(for: job.destination))")
         case .move: return String(localized: "Move \(count) item(s): \(from) → \(app.title(for: job.destination))")
         case .delete: return String(localized: "Delete \(count) item(s) on \(from)")
+        case .sync:
+            let folder = RemotePath.name(of: job.items.first?.path ?? "")
+            return String(localized: "Sync “\(folder)”: \(from) → \(app.title(for: job.destination))")
         }
     }
 

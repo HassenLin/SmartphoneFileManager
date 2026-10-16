@@ -16,6 +16,8 @@ enum ActiveSheet: Identifiable {
     case connect
     case deviceInfo
     case appManager
+    case iphoneInfo
+    case iphoneApps
     case imagePreview(ImagePreviewModel)
     case editor(EditorModel)
     case setupGuide(SetupTopic)
@@ -32,6 +34,8 @@ enum ActiveSheet: Identifiable {
         case .connect: return "connect"
         case .deviceInfo: return "deviceInfo"
         case .appManager: return "appManager"
+        case .iphoneInfo: return "iphoneInfo"
+        case .iphoneApps: return "iphoneApps"
         case let .imagePreview(model): return "image:\(model.item.path)"
         case let .editor(model): return "editor:\(model.item.path)"
         case let .setupGuide(topic): return "setup:\(topic.rawValue)"
@@ -77,6 +81,12 @@ final class AppModel {
     let right: BrowserModel
 
     var sheet: ActiveSheet?
+    /// 最後操作的窗格（選取變動時更新）；選單列「新增資料夾」等指令作用在這裡
+    var activeSide: PaneSide = .right
+    /// 工具列「同步」彈出視窗是否顯示（書籤選單選了同步專案時也由這裡打開）
+    var isSyncPopoverPresented = false
+    /// 彈出視窗要編輯的同步專案；nil 時以目前左右窗格找既有專案或建立新專案
+    var syncProjectToEdit: SyncProject.ID?
     var pendingDeletion: PendingDeletion?
     var pendingInstall: (side: PaneSide, item: FileItem)?
     /// app 內剪貼簿（剪下／拷貝後尚未貼上的項目），狀態列顯示用；實際貼上以系統剪貼簿內容為準
@@ -226,6 +236,45 @@ final class AppModel {
         }
     }
 
+    // MARK: 書籤與同步專案
+
+    /// 窗格目前所在的資料夾
+    func location(of side: PaneSide) -> FolderLocation? {
+        pane(side).sourceID.map { FolderLocation(source: $0, path: pane(side).path) }
+    }
+
+    /// 在窗格開啟某個位置（必要時切換來源）。舊版書籤（任一台 Android）用窗格目前的 Android 或第一台可用的。
+    func open(_ location: FolderLocation, in side: PaneSide) {
+        var source = location.source
+        if location.isAnyAndroid {
+            if let current = pane(side).sourceID, current.kind == .android {
+                source = current
+            } else if let device = devices.devices.first(where: \.isReady) {
+                source = .android(device.serial)
+            } else {
+                return toasts.error(AdbError.noDevice)
+            }
+        }
+        if pane(side).sourceID != source { selectSource(source, for: side) }
+        pane(side).navigate(to: location.path)
+    }
+
+    /// 書籤選單選了同步專案：左右窗格開到專案的資料夾，並打開同步彈出視窗
+    func openSyncProject(_ project: SyncProject) {
+        isLeftPaneCollapsed = false
+        open(project.left, in: .left)
+        open(project.right, in: .right)
+        syncProjectToEdit = project.id
+        isSyncPopoverPresented = true
+    }
+
+    /// 執行同步：加入工作佇列（裝置未連線時排隊等待）
+    func runSync(_ project: SyncProject) {
+        queue.enqueueSync(from: project.from, to: project.to, options: project.options,
+                          twoWay: project.direction == .twoWay)
+        toasts.success(String(localized: "Sync “\(project.name)” added to the task list"))
+    }
+
     // MARK: 剪貼簿（拷貝／剪下／貼上）
 
     /// 寫入系統剪貼簿：自有型別（含來源與是否剪下）＋ Mac 項目的檔案 URL（可直接貼到 Finder）
@@ -327,6 +376,12 @@ final class AppModel {
             case .delete:
                 toasts.success(job.source == .mac ? String(localized: "Moved \(count) item(s) to Trash")
                                                   : String(localized: "Deleted \(count) item(s)"))
+            case .sync:
+                if let rsync = job.rsyncSummary { return toasts.success(rsync) }
+                let summary = job.syncSummary
+                toasts.success(summary.copied + summary.deleted == 0
+                    ? String(localized: "Sync complete: already up to date")
+                    : String(localized: "Sync complete: \(summary.copied) file(s) copied, \(summary.deleted) item(s) deleted"))
             }
         case .failed:
             toasts.error(job.message ?? String(localized: "Some items failed. See the task list for details."))

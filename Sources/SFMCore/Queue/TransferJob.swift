@@ -3,6 +3,8 @@ import Foundation
 /// 工作種類
 public enum TransferKind: String, Codable, Sendable {
     case copy, move, delete
+    /// 單向同步（類似 rsync）：只傳新增／變更的檔案，可選刪除目的端多出的項目。見 `SyncPlanner`
+    case sync
 }
 
 /// 工作的狀態（FSM 停留狀態）。
@@ -54,6 +56,10 @@ public enum NodeOperation: String, Codable, Sendable {
     case transferFile
     /// 刪除（刪除工作）
     case delete
+    /// 刪除目的端的項目（同步：來源已沒有的項目，或型別不同需先移除的同名項目）
+    case deleteTarget
+    /// 兩邊都是 Mac 的同步：整個交給 rsync（`sourcePath`／`targetPath` 為兩個資料夾）。可重跑，中斷後繼續＝再跑一次
+    case rsync
     /// 規劃時就拒絕（移到自己裡面、已在此資料夾）：不執行，狀態沿用規劃結果
     case rejected
 }
@@ -75,6 +81,9 @@ public struct TransferNode: Codable, Sendable, Identifiable, Hashable {
     public var deleteSourceAfter: Bool
     /// nil = 葉節點（OutlineGroup 以此判斷能否展開）
     public var children: [TransferNode]?
+    /// 反方向的節點（雙向同步：目的 → 來源）。`sourcePath` 在工作的目的端、`targetPath` 在工作的來源端；
+    /// 執行器遇到時以對調來源／目的的執行器處理。nil＝正方向（舊佇列檔沒有這個欄位）
+    public var reversed: Bool?
 
     public init(name: String, sourcePath: String, targetPath: String, isDirectory: Bool, size: Int64,
                 operation: NodeOperation, deleteSourceAfter: Bool = false, children: [TransferNode]? = nil,
@@ -157,6 +166,10 @@ public struct TransferJob: Codable, Sendable, Identifiable {
     public let createdAt: Date
     /// 「套用到此工作的其餘衝突」選擇的動作
     public var conflictPolicy: ConflictAction?
+    /// 同步工作的選項（其他工作為 nil）。`items` 為單一來源資料夾、`destinationDirectory` 為目的資料夾本身
+    public var syncOptions: SyncOptions?
+    /// 雙向同步（`source`＝左、`destination`＝右）；nil／false 為單向
+    public var syncTwoWay: Bool?
 
     public init(kind: TransferKind, source: SourceID, destination: SourceID?, destinationDirectory: String?, items: [FileItem]) {
         self.id = UUID()
@@ -189,6 +202,18 @@ public struct TransferJob: Codable, Sendable, Identifiable {
     }
 
     var allNodes: [TransferNode] { roots.flatMap(\.flattened) }
+
+    /// rsync 節點的結果摘要（Mac ↔ Mac 同步；其他工作為 nil）
+    public var rsyncSummary: String? {
+        let messages = allNodes.filter { $0.operation == .rsync }.compactMap(\.message)
+        return messages.isEmpty ? nil : messages.joined(separator: "\n")
+    }
+
+    /// 同步結果：已傳輸的檔案數、已刪除的項目數（完成提示用）
+    public var syncSummary: (copied: Int, deleted: Int) {
+        let done = allNodes.filter { $0.state == .done }
+        return (done.filter { $0.operation == .transferFile }.count, done.filter { $0.operation == .deleteTarget }.count)
+    }
 
     mutating func updateNode(_ nodeID: UUID, _ body: (inout TransferNode) -> Void) {
         for index in roots.indices where roots[index].update(nodeID, body) { return }

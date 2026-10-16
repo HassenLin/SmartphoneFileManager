@@ -43,6 +43,86 @@ struct TransferQueueTests {
         return try #require(queue.job(id))
     }
 
+    // MARK: 同步（rsync）
+
+    @Test func syncCopiesOnlyChangesAndDeletesExtraneous() async throws {
+        let (android, _) = makeDevice(.android("A"))
+        let (iphone, phone) = makeDevice(.iphone("U"), nativeCopy: false)
+        phone.files["/b/x.txt"] = Data("x".utf8)            // 相同 → 不動
+        phone.files["/b/dir/y.txt"] = Data("old".utf8)      // 大小不同 → 覆寫（不詢問）
+        phone.files["/b/old.txt"] = Data("o".utf8)          // 來源沒有 → 刪除
+        phone.files["/b/.keep"] = Data("k".utf8)            // 隱藏且不含隱藏檔 → 不碰
+        phone.directories.insert("/b/dir")
+        let queue = makeQueue([android, iphone])
+        let job = try await finished(queue, queue.enqueueSync(
+            from: FolderLocation(source: android.id, path: "/a"), to: FolderLocation(source: iphone.id, path: "/b"),
+            options: SyncOptions(deleteExtraneous: true, includeHidden: false)))
+        #expect(job.state == .completed && queue.conflicts.isEmpty)
+        #expect(phone.files["/b/dir/y.txt"] == Data("y".utf8))
+        #expect(phone.files["/b/old.txt"] == nil)
+        #expect(phone.files["/b/.keep"] != nil)
+        let operations = job.allNodes.map(\.operation)
+        #expect(operations.filter { $0 == .transferFile }.count == 1)
+        #expect(operations.filter { $0 == .deleteTarget }.count == 1)
+
+        // 再同步一次：已一致，只剩根節點
+        let again = try await finished(queue, queue.enqueueSync(
+            from: FolderLocation(source: android.id, path: "/a"), to: FolderLocation(source: iphone.id, path: "/b"),
+            options: SyncOptions(deleteExtraneous: true, includeHidden: false)))
+        #expect(again.state == .completed && again.allNodes.count == 1)
+    }
+
+    @Test func syncIntoMissingFolderCreatesItAndRejectsOverlap() async throws {
+        let (android, store) = makeDevice(.android("A"))
+        let queue = makeQueue([android])
+        let job = try await finished(queue, queue.enqueueSync(
+            from: FolderLocation(source: android.id, path: "/a"), to: FolderLocation(source: android.id, path: "/c"),
+            options: SyncOptions()))
+        #expect(job.state == .completed)
+        #expect(store.files["/c/dir/y.txt"] == Data("y".utf8))
+        let overlap = try await finished(queue, queue.enqueueSync(
+            from: FolderLocation(source: android.id, path: "/a"), to: FolderLocation(source: android.id, path: "/a/dir"),
+            options: SyncOptions()))
+        #expect(overlap.state == .failed)
+    }
+
+    @Test func twoWaySyncNewerWinsAndDoesNotCopyBack() async throws {
+        let (android, left) = makeDevice(.android("A"))
+        let (iphone, right) = makeDevice(.iphone("U"), nativeCopy: false)
+        let old = Date(timeIntervalSinceNow: -3600), new = Date(timeIntervalSinceNow: -60)
+        left.files = ["/a/same.txt": Data("s".utf8), "/a/l-newer.txt": Data("L2".utf8), "/a/r-newer.txt": Data("r".utf8),
+                      "/a/only-left.txt": Data("ol".utf8)]
+        left.modified = ["/a/same.txt": old, "/a/l-newer.txt": new, "/a/r-newer.txt": old, "/a/only-left.txt": old]
+        right.files = ["/b/same.txt": Data("s".utf8), "/b/l-newer.txt": Data("l".utf8), "/b/r-newer.txt": Data("R2".utf8),
+                       "/b/sub/only-right.txt": Data("or".utf8)]
+        right.modified = ["/b/same.txt": old, "/b/l-newer.txt": old, "/b/r-newer.txt": new, "/b/sub/only-right.txt": old]
+        right.directories.insert("/b/sub")
+        let queue = makeQueue([android, iphone])
+        let sync = { queue.enqueueSync(from: FolderLocation(source: android.id, path: "/a"),
+                                       to: FolderLocation(source: iphone.id, path: "/b"),
+                                       options: SyncOptions(deleteExtraneous: true), twoWay: true) }
+        let job = try await finished(queue, sync())
+        #expect(job.state == .completed)
+        #expect(right.files["/b/l-newer.txt"] == Data("L2".utf8))
+        #expect(left.files["/a/r-newer.txt"] == Data("R2".utf8))
+        #expect(right.files["/b/only-left.txt"] == Data("ol".utf8))
+        #expect(left.files["/a/sub/only-right.txt"] == Data("or".utf8))
+        #expect(job.syncSummary.copied == 4 && job.syncSummary.deleted == 0)
+    }
+
+    @Test func twoWayUndecidableIsSkipped() async throws {
+        let (android, left) = makeDevice(.android("A"))
+        let (iphone, right) = makeDevice(.iphone("U"), nativeCopy: false)
+        left.files["/a/x.txt"] = Data("xx".utf8)          // 大小不同、兩邊都沒有時間 → 分不出新舊
+        right.files["/b/x.txt"] = Data("x".utf8)
+        let queue = makeQueue([android, iphone])
+        let job = try await finished(queue, queue.enqueueSync(
+            from: FolderLocation(source: android.id, path: "/a"), to: FolderLocation(source: iphone.id, path: "/b"),
+            options: SyncOptions(), twoWay: true))
+        #expect(left.files["/a/x.txt"] == Data("xx".utf8) && right.files["/b/x.txt"] == Data("x".utf8))
+        #expect(job.allNodes.contains { $0.operation == .rejected && $0.state == .skipped })
+    }
+
     // MARK: 規劃與執行
 
     @Test func sameSourceInstantMoveIsNative() async throws {

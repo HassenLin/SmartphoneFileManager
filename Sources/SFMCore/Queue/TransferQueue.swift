@@ -77,6 +77,21 @@ public final class TransferQueue {
 
     // MARK: 操作
 
+    /// 同步（類似 rsync）：`from` 資料夾的內容單向同步到 `to` 資料夾。
+    /// 規劃時才比對兩邊（見 `SyncPlanner`），所以排隊期間的變動也會反映；需要更新的同名檔案一律覆寫。
+    @discardableResult
+    public func enqueueSync(from: FolderLocation, to: FolderLocation, options: SyncOptions, twoWay: Bool = false) -> UUID {
+        var job = TransferJob(kind: .sync, source: from.source, destination: to.source, destinationDirectory: to.path,
+                              items: [FileItem(path: from.path, isDirectory: true, size: 0)])
+        job.syncOptions = options
+        job.syncTwoWay = twoWay
+        job.conflictPolicy = .overwrite
+        jobs.append(job)
+        save()
+        schedule()
+        return job.id
+    }
+
     @discardableResult
     public func enqueue(_ kind: TransferKind, items: [FileItem], from source: SourceID,
                         to destination: SourceID? = nil, directory: String? = nil) -> UUID? {
@@ -189,7 +204,8 @@ public final class TransferQueue {
                 jobID: id, source: source, destination: destination, staging: store.staging(for: id),
                 report: { [weak self] event in await self?.apply(id, event) },
                 progress: { nodeID, bytes in buffer.submit(nodeID, bytes) },
-                ask: { [weak self] conflict in await self?.ask(conflict) ?? .skip })
+                ask: { [weak self] conflict in await self?.ask(conflict) ?? .skip },
+                options: job.syncOptions, twoWay: job.syncTwoWay == true)
             try await executor.run(roots)
             finish(id, cancelled: false)
         } catch is CancellationError {

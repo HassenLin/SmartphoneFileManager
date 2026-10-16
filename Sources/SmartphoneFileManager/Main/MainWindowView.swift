@@ -2,10 +2,9 @@ import SFMCore
 import SwiftUI
 
 /// 主視窗：左右兩個對等的檔案窗格（各自選擇 Mac／Android／iPhone；左窗格可收合），
-/// 工具列放「裝置工具」的目標 Android 裝置與各項工具。
+/// 工具列放 Android／iPhone 工具按鈕（各自彈出目標裝置選擇與工具清單）。
 struct MainWindowView: View {
     @Bindable var app: AppModel
-    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         HSplitView {
@@ -65,48 +64,21 @@ struct MainWindowView: View {
             Button { app.isLeftPaneCollapsed.toggle() } label: { Image(systemName: "sidebar.left") }
                 .help(app.isLeftPaneCollapsed ? "Show Left Pane" : "Hide Left Pane")
         }
-        ToolbarItem(placement: .principal) {
-            devicePicker
+        // 同步（類似 rsync）：左右窗格目前的資料夾，彈出視窗設定專案名稱、方向與選項，見 SyncPopover.swift
+        ToolbarItem(placement: .primaryAction) {
+            SyncToolbarButton(app: app)
         }
+        // Android／iPhone 工具各一顆按鈕，按下彈出視窗（目標裝置選擇＋工具清單），見 DeviceToolsPopover.swift
         ToolbarItemGroup(placement: .primaryAction) {
-            let noDevice = app.devices.connection == nil
-            Button { app.sheet = .connect } label: { Label("Wireless", systemImage: "wifi") }
-                .help("Wireless Connection")
-            Button { if app.openTerminal() { openWindow(id: "terminal") } } label: { Label("Terminal", systemImage: "terminal") }
-                .help("ADB Terminal")
-                .disabled(noDevice)
-            Button { app.sheet = .appManager } label: { Label("Apps", systemImage: "square.grid.3x3") }
-                .help("Apps")
-                .disabled(noDevice)
-            Button { app.sheet = .deviceInfo } label: { Label("Device Info", systemImage: "info.circle") }
-                .help("Device Info")
-                .disabled(noDevice)
-            Button { app.takeScreenshot() } label: { Label("Screenshot", systemImage: "camera") }
-                .help("Screenshot (saved to Downloads)")
-                .disabled(noDevice)
-            Button { app.sheet = .clipboard } label: { Label("Clipboard", systemImage: "doc.on.clipboard") }
-                .help("Send Text to Device Clipboard")
-                .disabled(noDevice)
-            Button { app.startScreenMirror() } label: { Label("Mirror", systemImage: "rectangle.on.rectangle") }
-                .help("Screen Mirroring (scrcpy)")
-                .disabled(noDevice)
-        }
-    }
-
-    /// 裝置工具（終端機、App、截圖…）的目標 Android 裝置
-    private var devicePicker: some View {
-        @Bindable var devices = app.devices
-        return Picker("Device tools", selection: $devices.selectedSerial) {
-            if app.devices.devices.isEmpty {
-                Text("No Android device").tag(String?.none)
+            DeviceToolsButton(title: "Android", systemImage: "candybarphone",
+                              help: "Android tools (terminal, apps, screenshot…)") { perform in
+                AndroidToolsContent(app: app, perform: perform)
             }
-            ForEach(app.devices.devices) { device in
-                Text(device.isReady ? device.displayName : "\(device.displayName) — \(device.state)")
-                    .tag(Optional(device.serial))
+            DeviceToolsButton(title: "iPhone", systemImage: "iphone",
+                              help: "iPhone tools (device info, apps…)") { perform in
+                IPhoneToolsContent(app: app, perform: perform)
             }
         }
-        .frame(minWidth: 240)
-        .help("Android device used by the toolbar tools (terminal, apps, screenshot…)")
     }
 
     @ViewBuilder
@@ -127,7 +99,8 @@ struct MainWindowView: View {
         case let .addBookmark(side):
             TextInputSheet(title: "Bookmark This Folder", prompt: "Name", confirmTitle: "Add",
                            text: RemotePath.name(of: app.pane(side).path)) { name in
-                do { try app.bookmarks.add(name: name, path: app.pane(side).path) } catch { app.toasts.error(error) }
+                guard let location = app.location(of: side) else { return }
+                do { try app.bookmarks.addFolder(name: name, location: location) } catch { app.toasts.error(error) }
             }
         case let .search(side):
             SearchSheet(app: app, side: side)
@@ -140,6 +113,12 @@ struct MainWindowView: View {
         case .appManager:
             if let connection = app.devices.connection {
                 AppManagerView(model: AppManagerModel(service: AppPackageService(device: connection), toasts: app.toasts))
+            }
+        case .iphoneInfo:
+            IPhoneInfoView(app: app)
+        case .iphoneApps:
+            if let service = app.devices.iphoneService {
+                IPhoneAppsView(model: IPhoneAppsModel(service: service, toasts: app.toasts))
             }
         case let .imagePreview(model):
             ImagePreviewView(model: model)
