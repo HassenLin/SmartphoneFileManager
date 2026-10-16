@@ -4,7 +4,7 @@
 # 專案以 SwiftPM 管理（不手寫
 # .xcodeproj），缺的只有 app bundle 外殼，這支腳本補上：
 #   - Info.plist（含拖曳用的自訂 UTType 宣告、語系清單）
-#   - 內附 adb 與剪貼簿 helper（vendor/ → Contents/Resources/bin/）
+#   - 內附 adb（本機 vendor/adb 或系統 adb）與剪貼簿 helper（→ Contents/Resources/bin/）
 #   - 多語系字串（Localization/*.lproj → Contents/Resources/）
 #   - 圖示（tools/AppIcon.icns）
 #   - ad-hoc 簽章
@@ -28,11 +28,30 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/bin"
 cp "$BIN" "$APP/Contents/MacOS/$APP_NAME"
 
-# 內附 adb（Google platform-tools，universal binary）與剪貼簿 helper dex。
+# 內附 adb 與剪貼簿 helper dex。
 # 放在 Resources/bin 而非 MacOS/：它們是資源，不是這個 app 的主程式；
 # AdbLocator.bundledPath() 與 ClipboardService.loadHelper() 從這裡找。
-cp vendor/adb "$APP/Contents/Resources/bin/adb"
-chmod 755 "$APP/Contents/Resources/bin/adb"
+#
+# adb 是 Google SDK Platform-Tools 的二進位檔，其再散布受 Android SDK 授權條款約束，
+# 所以 repo 不收錄（vendor/adb 已列入 .gitignore）。組 app 時依序取：
+#   1. 本機放置的 vendor/adb　2. 系統 adb（Homebrew android-platform-tools、Android SDK、PATH）
+# 都沒有就不內附——app 執行時會自動改用系統 adb（AdbLocator 的退路）。
+ADB_SRC=""
+if [ -x vendor/adb ]; then
+    ADB_SRC="vendor/adb"
+else
+    for candidate in "$(command -v adb 2>/dev/null || true)" /opt/homebrew/bin/adb /usr/local/bin/adb \
+                     "${ANDROID_HOME:-}/platform-tools/adb" "$HOME/Library/Android/sdk/platform-tools/adb"; do
+        if [ -n "$candidate" ] && [ -x "$candidate" ]; then ADB_SRC="$candidate"; break; fi
+    done
+fi
+if [ -n "$ADB_SRC" ]; then
+    cp -L "$ADB_SRC" "$APP/Contents/Resources/bin/adb"   # -L：Homebrew 的 adb 是符號連結
+    chmod 755 "$APP/Contents/Resources/bin/adb"
+    echo "內附 adb：$ADB_SRC"
+else
+    echo "警告：找不到 adb，未內附（brew install --cask android-platform-tools）" >&2
+fi
 cp vendor/clipboard-helper.dex.b64 "$APP/Contents/Resources/bin/"
 
 # 多語系：SwiftUI 的 Text("…") 與 String(localized:) 都查 Bundle.main，

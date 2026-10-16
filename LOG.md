@@ -1,5 +1,11 @@
 # LOG
 
+- 2026-10-16｜**adb 不再收錄於 repo（開源準備）**
+  - `vendor/adb`（Google SDK Platform-Tools 二進位，再散布受 Android SDK 授權條款約束）移出 repo 並列入 `.gitignore`，
+    並自 git 歷史中移除（尚未推送前改寫）。
+  - `make-app.sh`：依序取本機 `vendor/adb`、系統 adb（Homebrew／Android SDK／PATH）內附進 .app；都沒有則不內附（app 自動改用系統 adb）。
+  - `install.sh`：沒有 adb 時以 Homebrew 安裝 `android-platform-tools`。
+
 - 2026-10-16｜**MTP 支援（libmtp）、第三方聲明**
   - 新增 `MTPFileSource`：虛擬根目錄列出儲存空間；路徑 ⇄ 物件 ID 快取於 session。
     `MTPSession` 每台裝置一條序列佇列（libmtp 非執行緒安全、MTP 一次一個交易）；`MTPDeviceManager` 以 USB 位置辨識、

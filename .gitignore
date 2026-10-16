@@ -3,4 +3,6 @@
 .build/
 .swiftpm/
 DerivedData/
+# Google SDK Platform-Tools 的 adb 二進位檔：再散布受 Android SDK 授權條款約束，不收錄（見 THIRD_PARTY_NOTICES.md）
+vendor/adb
 *.xcuserstate

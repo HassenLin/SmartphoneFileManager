@@ -12,7 +12,7 @@ import Testing
 @Suite("LiveDevice", .enabled(if: ProcessInfo.processInfo.environment["SFM_LIVE"] == "1"))
 struct LiveDeviceTests {
     @Test func endToEndAcrossMacAndroidAndIPhone() async throws {
-        // 優先用系統 adb，沒有就用 repo 內附的 vendor/adb
+        // 優先用系統 adb，沒有就用本機放置的 vendor/adb（不收錄於 repo）
         let vendored = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../vendor/adb").standardized.path
         let adb = AdbClient(executable: AdbLocator.systemPath() ?? vendored)
         let serial = try #require(try await adb.devices().first(where: \.isReady)?.serial, "需要已授權的 Android 裝置")

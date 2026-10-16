@@ -1,7 +1,7 @@
 # 安裝與建置
 
 需求：macOS 14+、Swift 6 toolchain（Xcode 或 Command Line Tools）。不需 Java、Gradle。
-必要：Homebrew 的 `libmtp`（MTP 裝置存取；`install.sh` 會自動安裝）。
+必要：Homebrew 的 `libmtp`（MTP 裝置存取）與 adb（`android-platform-tools`，已有 Android SDK 可沿用）；`install.sh` 會自動安裝。
 選用：Homebrew 的 `libimobiledevice` + `ideviceinstaller`（iPhone 媒體區與 App 文件）、`scrcpy`（Android 鏡像）。
 缺少任何一項時，app 內「輔助說明 → 安裝導引」會顯示步驟、官方下載連結與安裝指令。
 

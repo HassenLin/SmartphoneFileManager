@@ -3,7 +3,7 @@
 #
 # 做的事（依序）：
 #   1. 檢查 macOS 版本（14+）與 Swift toolchain（Xcode 或 Command Line Tools）
-#   2. 必要相依（Homebrew）：libmtp（MTP，建置與執行都需要）
+#   2. 必要相依（Homebrew）：libmtp（MTP，建置與執行都需要）、adb（android-platform-tools）
 #      選用相依（Homebrew）：libimobiledevice + ideviceinstaller（iPhone）、scrcpy（螢幕鏡像）
 #   3. 跑核心層單元測試（可略過）
 #   4. 以 release 組出 .app，安裝到 /Applications（無寫入權限時改 ~/Applications）
@@ -15,7 +15,8 @@
 #   ./tools/install.sh --skip-tests    略過單元測試
 #   ./tools/install.sh --dest DIR      指定安裝資料夾
 #
-# Android 不需要額外安裝：app 內附 adb（亦可在設定改用 Android SDK／Homebrew 的 adb）。
+# adb 不收錄於 repo（Google 二進位檔的再散布受 Android SDK 授權條款約束）：
+# 已有 Android SDK 或其他 adb 時沿用，否則以 Homebrew 安裝 android-platform-tools；組 app 時會把它內附進 .app。
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -69,6 +70,14 @@ if [ ! -f /opt/homebrew/include/libmtp.h ] && [ ! -f /usr/local/include/libmtp.h
     brew install libmtp
 else
     info "libmtp 已安裝"
+fi
+
+if [ -x vendor/adb ] || command -v adb >/dev/null 2>&1 || [ -x "$HOME/Library/Android/sdk/platform-tools/adb" ]; then
+    info "adb 已安裝"
+else
+    command -v brew >/dev/null 2>&1 || die "需要 adb：請安裝 Homebrew（https://brew.sh）或 Android SDK Platform-Tools"
+    info "安裝 adb（android-platform-tools）"
+    brew install --cask android-platform-tools
 fi
 
 # ── 2b. 選用相依 ────────────────────────────────────────────

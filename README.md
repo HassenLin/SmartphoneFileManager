@@ -5,7 +5,8 @@
 並擴充為任意來源 ⇄ 任意來源。結構：SwiftPM 套件 + `tools/make-app.sh`。
 
 - **部署目標**：macOS 14+（開發機 macOS 27 / Xcode 27 / Swift 6.4）
-- **Android**：內附 adb（亦可改用 Android SDK／Homebrew 的 adb）
+- **Android**：需要 adb（`brew install --cask android-platform-tools` 或 Android SDK）；`make-app.sh` 會把找到的 adb 內附進 .app。
+  repo 不收錄 adb 二進位檔（Google SDK 授權條款），見 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)
 - **MTP**（必要相依 `brew install libmtp`）：沒開 USB 偵錯的 Android、電子書閱讀器等 MTP 裝置；有 adb 的 Android 也可另選 MTP。
   根目錄列出各儲存空間（內部、SD 卡）；同儲存空間移動與小檔複製由裝置端完成，大檔／資料夾經 Mac 中繼（MTP 裝置端複製無進度且會逾時）
 - **iPhone**：透過 libimobiledevice（`brew install libimobiledevice ideviceinstaller`）。根目錄分兩個虛擬資料夾：
@@ -64,7 +65,7 @@ Sources/SmartphoneFileManager/ L4：SwiftUI app
   Setup/                      SetupGuideView（安裝導引）
 Tests/SFMCoreTests/           Swift Testing（含 FakeSource 引擎測試、實機測試）
 Localization/                 *.lproj（tools/gen-strings.py 產生：繁中＝zh-Hant.json 人工維護；簡中＝hant2hans.swift 自動轉換＋overrides）
-vendor/                       adb、clipboard-helper.dex.b64
+vendor/                       clipboard-helper.dex.b64（adb 可本機放置於此，不收錄於 repo）
 tools/                        install.sh、make-app.sh、make-icon.swift、AppIcon.icns、gen-strings.py、hant2hans.swift、zh-Hant.json、zh-Hans.overrides.json
 ```
 

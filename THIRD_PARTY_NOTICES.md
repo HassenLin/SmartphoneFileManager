@@ -12,11 +12,11 @@
 | [wkbin/AdbFileManager](https://github.com/wkbin/AdbFileManager) v3.1.2（Kotlin／Compose）<br>Copyright (c) 2023 Kebin Wang | MIT | 本專案為其 macOS SwiftUI 移植：功能設計、adb 操作流程、介面文字與部分邏輯源自原版。原版 MIT 授權聲明保留於 [`LICENSE`](LICENSE)。 |
 | 同上專案的 `tools/clipboard-helper/ClipboardHelper.java` | MIT | `vendor/clipboard-helper.dex.b64` 為其編譯產物（自原版 `src/main/composeResources/files/android/` 取得），於 Android 端執行以寫入剪貼簿。 |
 
-## 2. 內附於 app 的二進位檔
+## 2. 組 app 時內附的二進位檔（不收錄於 repo）
 
 | 項目 | 版本 | 授權 | 說明 |
 |---|---|---|---|
-| Android Debug Bridge（`vendor/adb`） | 1.0.41（Platform-Tools 36.0.0-13206524） | 原始碼：Apache-2.0（[AOSP `packages/modules/adb`](https://android.googlesource.com/platform/packages/modules/adb/)）<br>官方二進位檔：[Android SDK 授權條款](https://developer.android.com/studio/terms) | ⚠ **開源發佈前待決**：官方二進位檔的再散布受 SDK 授權條款約束。建議擇一：(a) repo 不內附，改由使用者安裝（`brew install --cask android-platform-tools`），app 已支援自動尋找系統 adb；(b) 由 AOSP 原始碼自行建置後內附，依 Apache-2.0 附上授權與 NOTICE。 |
+| Android Debug Bridge（`vendor/adb`） | 1.0.41（Platform-Tools 36.0.0-13206524） | 原始碼：Apache-2.0（[AOSP `packages/modules/adb`](https://android.googlesource.com/platform/packages/modules/adb/)）<br>官方二進位檔：[Android SDK 授權條款](https://developer.android.com/studio/terms) | 官方二進位檔的再散布受 SDK 授權條款約束，因此 **repo 不收錄**（`.gitignore`）。使用者自行安裝（`brew install --cask android-platform-tools` 或 Android SDK）；`tools/make-app.sh` 在本機組 app 時把找到的 adb 複製進 bundle。若要發佈預先建置的 .app，需另行確認授權（或改由 AOSP 原始碼自行建置並附上 Apache-2.0 授權與 NOTICE）。 |
 
 ## 3. 連結的函式庫
 
