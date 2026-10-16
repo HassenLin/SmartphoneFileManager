@@ -93,12 +93,29 @@ final class AppModel {
     func pane(_ side: PaneSide) -> BrowserModel { side == .left ? left : right }
 
     func start() {
+        Self.removeStaleTemporaryFiles()
         devices.start()
         refreshSources()
         // adb 無法執行時（例如設定指向不存在的路徑）一啟動就開安裝導引，而不是讓使用者面對空窗格
         Task {
             await devices.refresh()
             if devices.adbError != nil, sheet == nil { sheet = .setupGuide(.android) }
+        }
+    }
+
+    /// 清除上次執行留下的暫存（`afm-` 開頭）：拖到 Finder 的下載（`afm-drag-*`，交出後無人回收）、
+    /// 以及被強制結束時殘留的中繼／讀寫暫存。啟動當下不會有進行中的傳輸，可整批刪除。
+    /// 例外：`afm-open-*` 是交給其他 App 開啟的副本，對方可能還開著，超過一天才清。
+    private static func removeStaleTemporaryFiles() {
+        let fm = FileManager.default
+        let temp = fm.temporaryDirectory
+        let dayAgo = Date().addingTimeInterval(-86_400)
+        for name in (try? fm.contentsOfDirectory(atPath: temp.path)) ?? [] where name.hasPrefix("afm-") {
+            let url = temp.appendingPathComponent(name)
+            if name.hasPrefix("afm-open-"),
+               let modified = try? fm.attributesOfItem(atPath: url.path)[.modificationDate] as? Date,
+               modified > dayAgo { continue }
+            try? fm.removeItem(at: url)
         }
     }
 
@@ -440,6 +457,14 @@ final class AppModel {
             provider.suggestedName = item.name
             let type = item.isDirectory ? UTType.folder : (UTType(filenameExtension: (item.name as NSString).pathExtension) ?? .data)
             provider.registerFileRepresentation(forTypeIdentifier: type.identifier, fileOptions: [], visibility: .all) { completion in
+                // 這份檔案只給「拖到 Finder／其他 App」用，必須先把整個檔案下載到 Mac 暫存區。
+                // 實測：拖到另一個窗格時，SwiftUI 的 drop 目的地在 draggingEntered 就會要求這個表示法，
+                // 導致滑鼠一滑過窗格就開始下載（20G 檔案 → 藍框停住、暫存區被塞滿）。
+                // 窗格之間的拖放只需要上面的自有型別（同裝置走原生 mv），所以滑鼠仍在本 app 視窗上時拒絕提供。
+                if Self.isPointerOverOwnWindow() {
+                    completion(nil, false, CocoaError(.userCancelled))
+                    return nil
+                }
                 let directory = FileManager.default.temporaryDirectory.appendingPathComponent("afm-drag-\(UUID().uuidString)")
                 let destination = directory.appendingPathComponent(item.name)
                 Task {
@@ -455,6 +480,16 @@ final class AppModel {
             }
         }
         return provider
+    }
+
+    /// 滑鼠目前所在的最上層視窗是否屬於本 app（拖曳期間由 AppKit 在主執行緒或背景執行緒呼叫，兩者都要能用）
+    nonisolated static func isPointerOverOwnWindow() -> Bool {
+        let check: @MainActor @Sendable () -> Bool = {
+            let number = NSWindow.windowNumber(at: NSEvent.mouseLocation, belowWindowWithWindowNumber: 0)
+            return NSApp.windows.contains { $0.windowNumber == number }
+        }
+        if Thread.isMainThread { return MainActor.assumeIsolated(check) }
+        return DispatchQueue.main.sync { MainActor.assumeIsolated(check) }
     }
 
     /// 放下到窗格：自有項目 → FileTransfer；Finder 檔案 → 從 Mac 拷貝。
