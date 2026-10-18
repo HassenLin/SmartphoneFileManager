@@ -28,15 +28,18 @@ enum FileDateFormat {
     static func string(_ date: Date?) -> String { date.map(formatter.string(from:)) ?? "" }
 }
 
-/// 窗格標題列的路徑麵包屑；點任一段跳到該層，雙擊切換成可輸入的文字框
+/// 窗格標題列的路徑麵包屑；點任一段跳到該層，雙擊切換成可輸入的文字框。
+/// 從 Finder 把檔案或資料夾拖到這裡：交給 `onDropURL`（窗格切到這台 Mac 並開啟該位置）。
 struct PathBar: View {
     let components: [(title: String, target: String)]
     let onSelect: (String) -> Void
     let onSubmit: ((String) -> Void)?
     let fullPath: String
+    var onDropURL: ((URL) -> Void)?
 
     @State private var editing = false
     @State private var typed = ""
+    @State private var dropTargeted = false
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -83,6 +86,17 @@ struct PathBar: View {
             }
         }
         .frame(height: 24)
+        .overlay {
+            if dropTargeted {
+                RoundedRectangle(cornerRadius: 5).stroke(Color.accentColor, lineWidth: 2)
+            }
+        }
+        // 只收檔案網址（Finder、Mac 窗格的項目）；裝置／網路項目沒有檔案網址，不會被接受
+        .dropDestination(for: URL.self) { urls, _ in
+            guard let onDropURL, let url = urls.first(where: \.isFileURL) else { return false }
+            onDropURL(url)
+            return true
+        } isTargeted: { dropTargeted = onDropURL != nil && $0 }
     }
 
     private func copyPathButton(_ path: String) -> some View {

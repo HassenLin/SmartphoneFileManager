@@ -316,6 +316,20 @@ final class AppModel {
         queue.schedule()
     }
 
+    /// 從 Finder 拖到路徑列的項目：窗格切到這台 Mac，資料夾直接開啟；檔案開啟所在資料夾並選取它
+    func openMacLocation(_ url: URL, in side: PaneSide) {
+        let path = url.standardizedFileURL.path
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) else { return }
+        if pane(side).sourceID != .mac { selectSource(.mac, for: side) }
+        if isDirectory.boolValue {
+            pane(side).navigate(to: path)
+        } else {
+            pane(side).navigate(to: (path as NSString).deletingLastPathComponent, highlight: path)
+        }
+        activeSide = side
+    }
+
     /// 某來源內容變了：所有顯示該來源的窗格都重新載入
     func reloadPanes(showing id: SourceID, highlight: [String] = []) {
         for pane in [left, right] where pane.sourceID == id {

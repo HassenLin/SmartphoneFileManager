@@ -53,7 +53,8 @@ struct BrowserPaneView: View {
                 Button { model.goHome() } label: { Image(systemName: "house") }
                     .help("Home Folder")
                 PathBar(components: pathComponents, onSelect: { model.navigate(to: $0) },
-                        onSubmit: { model.go(toTyped: $0) }, fullPath: model.path)
+                        onSubmit: { model.go(toTyped: $0) }, fullPath: model.path,
+                        onDropURL: { app.openMacLocation($0, in: side) })
                 Button { model.reload() } label: { Image(systemName: "arrow.clockwise") }
                     .help("Refresh")
                 // 新增資料夾也可用選單列 ⇧⌘N（作用在最後操作的窗格，`AppModel.activeSide`）

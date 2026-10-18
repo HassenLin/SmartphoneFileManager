@@ -1,5 +1,9 @@
 # LOG
 
+- 2026-10-18｜**從 Finder 拖檔案或資料夾到路徑列：開啟該 Mac 路徑**
+  - `PathBar` 加 `dropDestination(for: URL.self)`（只收檔案網址，裝置／網路項目不受影響），放下時藍框提示。
+  - `AppModel.openMacLocation`：窗格不是 Mac 時先切到這台 Mac；資料夾直接開啟，檔案開啟所在資料夾並選取。
+
 - 2026-10-18｜**新增網路來源：WebDAV、FTP／FTPS（主動／被動、explicit／implicit）、SFTP、pCloud（美國／歐洲）**
   - 架構：`SourceID.Kind.network`（deviceID＝帳號 id），協定 → 實作只在 `NetworkSourceFactory`；佇列、衝突、續傳、同步、書籤不需修改。
   - 帳號：`NetworkAccount`＋`ConnectionOptions`（每欄可覆寫全域預設），存 `Application Support/…/accounts.json`；密碼／token 存鑰匙圈（`CredentialStore`，
