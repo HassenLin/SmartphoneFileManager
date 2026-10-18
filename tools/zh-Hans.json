@@ -148,6 +148,7 @@
   "Copying from the device is disabled for read-only folders." : "只读文件夹无法接收从设备复制的文件。",
   "Copying to Mac" : "正在复制到 Mac",
   "Copying to device" : "正在复制到设备",
+  "Could not save the sign-in to the keychain." : "无法把登入信息存进钥匙圈。",
   "Create" : "建立",
   "Create a pCloud app…" : "建立 pCloud App…",
   "Create an app in pCloud “My applications” and add the redirect URI above. The same app works for US and Europe accounts. The secret is kept in the login keychain." : "在 pCloud“My applications”建立 App，并加入上方的 Redirect URI。同一个 App 可用于美国与欧洲帐号。Secret 存在登入钥匙圈。",

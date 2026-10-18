@@ -90,7 +90,9 @@ final class AccountStore {
 
     /// pCloud 登入成功（帳號密碼或 OAuth）：存 token、更新地區與 email
     func savePCloudSignIn(_ session: PCloudSession, for account: NetworkAccount) throws -> NetworkAccount {
-        CredentialStore.setPCloudToken(session.token.keychainValue, for: account)
+        guard CredentialStore.setPCloudToken(session.token.keychainValue, for: account) else {
+            throw NetworkError.server(String(localized: "Could not save the sign-in to the keychain."))
+        }
         var updated = account
         updated.pcloudRegion = session.region
         if let email = session.email { updated.username = email }

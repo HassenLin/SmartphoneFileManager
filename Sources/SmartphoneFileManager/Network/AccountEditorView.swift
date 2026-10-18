@@ -43,7 +43,15 @@ struct AccountEditorView: View {
         _draft = State(initialValue: account)
     }
 
-    private var isDirty: Bool { isNew || draft != original || password != savedPassword }
+    /// pCloud 的密碼欄只用來登入、不儲存，不算未儲存的變更
+    private var isDirty: Bool {
+        isNew || draft != original || (draft.protocol != .pcloud && password != savedPassword)
+    }
+
+    /// pCloud 正在登入（填 Email／密碼或驗證碼）：Return 要觸發「登入」／「驗證」而不是「儲存」——
+    /// 儲存會重建本視圖，進行到一半的兩步驟驗證狀態就會遺失、回到輸入密碼
+    private var pcloudSigningIn: Bool { draft.protocol == .pcloud && !signedInToken }
+
 
     var body: some View {
         VStack(spacing: 0) {
@@ -77,7 +85,7 @@ struct AccountEditorView: View {
                     Button("Revert") { revert() }.disabled(!isDirty)
                 }
                 Button(isNew ? "Add" : "Save") { save() }
-                    .keyboardShortcut(.defaultAction)
+                    .keyboardShortcut(pcloudSigningIn ? nil : .defaultAction)
                     .disabled(!isDirty || draft.validationError() != nil)
             }
             .padding(12)
@@ -194,6 +202,7 @@ struct AccountEditorView: View {
                     .font(.caption).foregroundStyle(.secondary)
                 HStack {
                     Button("Verify") { verifyTwoFactor(pending) }
+                        .keyboardShortcut(.defaultAction)
                         .disabled(signingIn || twoFactorCode.filter(\.isNumber).isEmpty)
                     Button("Cancel") { twoFactor = nil; twoFactorCode = "" }
                     if signingIn { ProgressView().controlSize(.small) }
@@ -203,6 +212,7 @@ struct AccountEditorView: View {
                 SecureField("Password", text: $password)
                 HStack {
                     Button("Sign In") { signInWithPassword() }
+                        .keyboardShortcut(.defaultAction)
                         .disabled(signingIn || draft.username.trimmingCharacters(in: .whitespaces).isEmpty || password.isEmpty)
                     if !app.accounts.library.pcloudClientID.isEmpty {
                         Button("Sign In with Browser…") { signIn() }.disabled(signingIn)

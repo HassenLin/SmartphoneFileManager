@@ -660,5 +660,6 @@
 "The password is only used to sign in; just the sign-in token is kept in the login keychain.": "密碼只用來登入，不會儲存；登入鑰匙圈只保存登入憑證（token）。",
 "Verification code": "驗證碼",
 "Verify": "驗證",
-"pCloud browser sign-in (optional)": "pCloud 瀏覽器登入（選用）"
+"pCloud browser sign-in (optional)": "pCloud 瀏覽器登入（選用）",
+"Could not save the sign-in to the keychain.": "無法把登入資訊存進鑰匙圈。"
 }

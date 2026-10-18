@@ -8,6 +8,8 @@
   - 登出／刪帳號時呼叫 `logout` 作廢 token（複製出的帳號共用 token 時不作廢）。測試 93 項通過；尚未以實際 pCloud 帳號驗證。
   - 修正：開了兩步驟驗證的帳號沒有出現驗證碼欄位 → 改用 `login` 方法並帶 `os`／`deviceid`（官方文件未記載，依 pcloudcom/console-client 與 seborama/pcloud SDK），
     2297 時以 `tfa_login`＋6 位數驗證碼換 token，`trustdevice=1` 之後此 Mac 不必再輸入。
+  - 修正：輸入 6 位數驗證碼後按 Return 觸發的是「儲存」，重建畫面後驗證狀態遺失、回到輸入密碼 → pCloud 登入中 Return 改對應「登入」／「驗證」；
+    pCloud 密碼欄不算未儲存變更；token 寫入鑰匙圈失敗時顯示錯誤。
   - 修正：在錯的資料中心登入回 2321（This user is on another location）時沒有換區重試 → 2321 改為自動改試另一區。
 
 - 2026-10-18｜**`make-app.sh` 改用固定簽章身分：重新 build 不必再允許鑰匙圈存取**
