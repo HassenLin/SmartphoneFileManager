@@ -4,6 +4,7 @@
 "%@ (not encrypted)" = "%@（未加密）";
 "%@ / %@" = "%@ / %@";
 "%@ copy" = "%@ 拷贝";
+"%@ left" = "剩 %@";
 "%@: %@" = "%1$@：%2$@";
 "%@: not enough space on the server (HTTP %lld)" = "%@：伺服器空间不足（HTTP %lld）";
 "%@: permission denied (HTTP 403)" = "%@：没有权限（HTTP 403）";
@@ -35,6 +36,7 @@
 "ADB mode only accepts adb commands. Type adb shell to enter the device shell.\n" = "ADB 模式只接受 adb 命令。输入 adb shell 进入设备 shell。\n";
 "ADB terminal for %@\nType adb shell to enter the device shell.\n" = "%@ 的 ADB 终端\n输入 adb shell 进入设备 shell。\n";
 "APK installed" = "APK 已安装";
+"About %@ left" = "预估剩 %@";
 "Accessible: Media (DCIM, Downloads, Books, Recordings…) and the Documents folder of apps that enable file sharing. Not accessible: the system, iCloud Drive, or private data of other apps." = "可访问：Media（DCIM、Downloads、Books、Recordings…）以及开启文件共享之 App 的 Documents 文件夹。无法访问：系统、iCloud 云盘、其他 App 的私有资料。";
 "Account" = "帐号";
 "Active" = "主动";
@@ -65,6 +67,7 @@
 "Apply to all remaining conflicts in this task" = "套用到此工作的其余冲突";
 "Apps" = "应用";
 "Apps…" = "应用管理…";
+"At least %@ left (still scanning)" = "至少剩 %@（仍在扫描）";
 "Authentication" = "登入方式";
 "Automatic" = "自动";
 "Back Up APK…" = "备份 APK…";
@@ -384,6 +387,7 @@
 "Not signed in" = "尚未登入";
 "Not used" = "未使用";
 "Not yet known (remembered on first connection)" = "尚未记录（第一次连接时记住）";
+"Now: %@" = "当前：%@";
 "OK" = "好";
 "Off = use the default from Settings → Network" = "不勾选＝沿用 设置 → 网络 的默认值";
 "On the Android phone" = "在 Android 手机上";
@@ -483,6 +487,7 @@
 "Saved" = "已保存";
 "Saved as UTF-8 (the text cannot be represented in the original encoding)." = "已保存为 UTF-8（原编码无法表示当前的文字）。";
 "Saved in the login keychain." = "存在登入钥匙圈。";
+"Scanning…" = "扫描中…";
 "Screen" = "屏幕";
 "Screen Mirroring" = "投屏";
 "Screen Mirroring (scrcpy)" = "投屏（scrcpy）";

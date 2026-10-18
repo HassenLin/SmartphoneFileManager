@@ -1,5 +1,12 @@
 # LOG
 
+- 2026-10-18｜**工作佇列：立即開始，顯示百分比與預估完成時間（目前作業優先）**
+  - `TransferPlanner` 不再於開始前遞迴列出整棵資料夾樹：資料夾節點標 `expanded == false`，`TransferExecutor` 執行到時才列出一層
+    （`NodeEvent.expand`，寫入佇列保存，繼續時不必重列）。第一個檔案立刻開始傳。同步仍事先比對展開。
+  - 新增 `TransferRate`（1 秒視窗＋指數移動平均，只計實際傳輸的增量）與 `DurationFormat`；佇列保存每個執行中工作的速率。
+  - 工作列：百分比、已傳／總量、預估剩餘時間（仍在掃描時為「至少剩 …（仍在掃描）」）；下一行「目前：檔名 百分比 · 速率 · 剩 …」。
+  - 測試 96 項通過（新增：規劃不列資料夾、一層展開、速率平滑、時間格式）。
+
 - 2026-10-18｜**pCloud 改為 Email＋密碼登入（不需註冊 pCloud App）**
   - 原本只能 OAuth，須先在 pCloud 註冊 App 取得 Client ID／Secret 並等核准。新增 `PCloudLogin`：`getdigest`＋`passworddigest`
     （密碼不送出、不儲存）換 auth token；兩步驟驗證（2297 → `tfa_login`）；先試選定地區、失敗再試另一區，自動判定美國／歐洲。

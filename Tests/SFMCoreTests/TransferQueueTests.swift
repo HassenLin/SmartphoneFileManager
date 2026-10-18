@@ -325,3 +325,46 @@ struct TransferQueueTests {
         #expect(queue.job(first)?.state == .completed)
     }
 }
+
+/// 資料夾延後展開與速率／剩餘時間（不必等整棵樹掃描完才開始）
+@Suite("TransferProgress")
+struct TransferProgressTests {
+    @Test func plannerDoesNotListFolders() async throws {
+        let store = FakeStore()
+        store.files["/a/dir/sub/z.txt"] = Data("z".utf8)
+        store.directories.formUnion(["/a", "/a/dir", "/a/dir/sub", "/b"])
+        let source = FakeSource(id: .android("A"), store: store)
+        let destination = FakeSource(id: .iphone("U"), store: FakeStore(), nativeCopy: false)
+        let job = TransferJob(kind: .copy, source: source.id, destination: destination.id, destinationDirectory: "/b",
+                              items: [FileItem(path: "/a/dir", isDirectory: true, size: 0)])
+        let roots = try await TransferPlanner.plan(job, source: source, destination: destination)
+        // 規劃只建立節點：資料夾內容等執行到時才列出
+        #expect(roots.first?.isUnexpanded == true && roots.first?.children == [])
+        // 展開一層：子資料夾同樣先不展開
+        let children = try await TransferPlanner.children(of: try #require(roots.first), from: source)
+        #expect(children.map(\.name) == ["sub"] && children.first?.isUnexpanded == true)
+        #expect(children.first?.targetPath == "/b/dir/sub")
+    }
+
+    @Test func rateSmoothsSamplesAndEstimates() {
+        let start = Date(timeIntervalSince1970: 0)
+        var rate = TransferRate(window: 1, smoothing: 0.5)
+        rate.record(0, at: start)
+        #expect(rate.bytesPerSecond == nil && rate.secondsRemaining(100) == nil)
+        rate.record(1000, at: start.addingTimeInterval(1))       // 第一個樣本 1000 B/s
+        #expect(rate.bytesPerSecond == 1000)
+        rate.record(3000, at: start.addingTimeInterval(2))       // 3000 B/s → 平滑後 2000
+        #expect(rate.bytesPerSecond == 2000)
+        rate.record(500, at: start.addingTimeInterval(2.5))      // 未滿一個視窗，不更新
+        #expect(rate.bytesPerSecond == 2000)
+        #expect(rate.secondsRemaining(10_000) == 5)
+        rate.record(-50, at: start.addingTimeInterval(3))         // 負增量視為 0；此視窗共 500 B → 500 B/s，平滑後 1250
+        #expect(rate.bytesPerSecond == 1250)
+    }
+
+    @Test func durationFormat() {
+        #expect(DurationFormat.string(41.2) == "0:42")
+        #expect(DurationFormat.string(725) == "12:05")
+        #expect(DurationFormat.string(3723) == "1:02:03")
+    }
+}

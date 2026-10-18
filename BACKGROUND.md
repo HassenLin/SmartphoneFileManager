@@ -38,3 +38,4 @@
 | pCloud 登入 | 預設 Email＋密碼（`getdigest`＋`passworddigest` 換 auth token，支援兩步驟驗證）；OAuth2 為選用 | OAuth 需註冊 App 且要等 pCloud 核准，太耗時 → 改為帳號密碼直接登入：密碼以一次性 digest 雜湊送出、不存，只存 token，登出時呼叫 `logout` 作廢；地區先試使用者選的區、失敗再試另一區。OAuth（選用）：歐洲帳號必須打 `eapi.pcloud.com`——以回呼的 `hostname`／`locationid` 決定地區並換 token，hostname 只接受兩個官方 host（不把 client secret 送到別處） |
 | pCloud 上傳續傳 | 不支援（整份重傳） | `uploadfile` 不能指定位置；可日後改 upload_create／upload_write |
 | 帳號選項 | 每欄 Optional＝沿用全域預設，`resolved(defaults:)` 產生具體值 | FileSource 不讀 UserDefaults，core 可測試；全域預設與帳號選項共用同一個表單 |
+| 工作進度與預估時間 | 資料夾執行到才展開；速率以 1 秒視窗＋指數移動平均 | 不像其他檔案管理器先掃描整棵樹才開始（大量小檔或慢速裝置要等很久）：第一個檔案立刻傳，目前檔案的百分比與剩餘時間馬上有；整體總量隨掃描逐步增加，掃描中預估標為「至少」。速率只算實際傳輸的增量，略過的檔案不灌高速率。同步需比對兩邊，仍事先展開 |

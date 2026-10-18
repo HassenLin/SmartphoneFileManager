@@ -81,6 +81,9 @@ public struct TransferNode: Codable, Sendable, Identifiable, Hashable {
     public var deleteSourceAfter: Bool
     /// nil = 葉節點（OutlineGroup 以此判斷能否展開）
     public var children: [TransferNode]?
+    /// 資料夾內容是否已列出。`false`＝尚未展開：執行到這個資料夾時才列出內容（`TransferExecutor.makeDirectory`），
+    /// 工作不必等整棵樹掃描完才開始。nil＝已展開（同步規劃、舊佇列檔都是事先展開好的）
+    public var expanded: Bool?
     /// 反方向的節點（雙向同步：目的 → 來源）。`sourcePath` 在工作的目的端、`targetPath` 在工作的來源端；
     /// 執行器遇到時以對調來源／目的的執行器處理。nil＝正方向（舊佇列檔沒有這個欄位）
     public var reversed: Bool?
@@ -123,6 +126,9 @@ public struct TransferNode: Codable, Sendable, Identifiable, Hashable {
 
     /// 所有節點（含自己）
     var flattened: [TransferNode] { [self] + (children ?? []).flatMap(\.flattened) }
+
+    /// 尚未列出內容的資料夾（總大小只含已知部分）
+    public var isUnexpanded: Bool { expanded == false }
 }
 
 /// 衝突處理方式（類似 FTP 客戶端）
@@ -202,6 +208,14 @@ public struct TransferJob: Codable, Sendable, Identifiable {
     }
 
     var allNodes: [TransferNode] { roots.flatMap(\.flattened) }
+
+    /// 還有資料夾尚未展開：`totalBytes` 只是目前已知的部分，之後會再增加
+    public var isScanning: Bool { !planned || allNodes.contains { $0.isUnexpanded && $0.state != .done && $0.state != .skipped } }
+
+    /// 正在傳輸的檔案（深度優先、一次一個；沒有時為 nil）
+    public var currentFile: TransferNode? {
+        allNodes.first { $0.state == .running && $0.operation == .transferFile }
+    }
 
     /// rsync 節點的結果摘要（Mac ↔ Mac 同步；其他工作為 nil）
     public var rsyncSummary: String? {

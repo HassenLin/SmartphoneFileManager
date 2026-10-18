@@ -89,12 +89,16 @@ private struct JobRow: View {
                 Text(title).lineLimit(1).truncationMode(.middle)
                 HStack(spacing: 8) {
                     ProgressView(value: job.fraction).progressViewStyle(.linear).frame(maxWidth: 220)
+                    Text(job.fraction, format: .percent.precision(.fractionLength(0)))
+                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                     if job.totalBytes > 0 {
                         Text("\(ByteFormat.string(job.doneBytes)) / \(ByteFormat.string(job.totalBytes))")
                             .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                     }
+                    if let jobETA { Text(jobETA).font(.caption.monospacedDigit()).foregroundStyle(.secondary) }
                     Text(stateText).font(.caption).foregroundStyle(job.state == .failed ? .red : .secondary)
                 }
+                if job.state == .running, let file = job.currentFile { currentFileLine(file) }
                 if let message = job.message {
                     Text(message).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                 }
@@ -126,6 +130,33 @@ private struct JobRow: View {
         }
         .buttonStyle(.borderless)
         .font(.title3)
+    }
+
+    private var rate: TransferRate? { queue.rates[job.id] }
+
+    /// 整個工作的預估剩餘時間。仍在掃描（資料夾尚未展開）時只涵蓋已知部分，標為「至少」
+    private var jobETA: String? {
+        guard job.state == .running, let seconds = rate?.secondsRemaining(job.totalBytes - job.doneBytes) else {
+            return job.state == .running && job.isScanning ? String(localized: "Scanning…") : nil
+        }
+        let time = DurationFormat.string(seconds)
+        return job.isScanning ? String(localized: "At least \(time) left (still scanning)")
+                              : String(localized: "About \(time) left")
+    }
+
+    /// 目前檔案：名稱、百分比、速率、剩餘時間（先有這一行，整體預估隨掃描逐步完整）
+    private func currentFileLine(_ file: TransferNode) -> some View {
+        let fraction = file.size > 0 ? min(1, Double(file.transferred) / Double(file.size)) : 0
+        var parts = [fraction.formatted(.percent.precision(.fractionLength(0)))]
+        if let speed = rate?.bytesPerSecond { parts.append("\(ByteFormat.string(Int64(speed)))/s") }
+        if let seconds = rate?.secondsRemaining(file.size - file.transferred) {
+            parts.append(String(localized: "\(DurationFormat.string(seconds)) left"))
+        }
+        return HStack(spacing: 6) {
+            Text("Now: \(file.name)").lineLimit(1).truncationMode(.middle)
+            Text(parts.joined(separator: " · ")).monospacedDigit()
+        }
+        .font(.caption).foregroundStyle(.secondary)
     }
 
     private var icon: String {

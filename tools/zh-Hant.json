@@ -661,5 +661,10 @@
 "Verification code": "驗證碼",
 "Verify": "驗證",
 "pCloud browser sign-in (optional)": "pCloud 瀏覽器登入（選用）",
-"Could not save the sign-in to the keychain.": "無法把登入資訊存進鑰匙圈。"
+"Could not save the sign-in to the keychain.": "無法把登入資訊存進鑰匙圈。",
+"%@ left": "剩 %@",
+"About %@ left": "預估剩 %@",
+"At least %@ left (still scanning)": "至少剩 %@（仍在掃描）",
+"Now: %@": "目前：%@",
+"Scanning…": "掃描中…"
 }

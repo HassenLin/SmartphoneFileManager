@@ -7,6 +7,8 @@ enum NodeEvent: Sendable {
     case state(UUID, NodeState, message: String? = nil)
     /// 衝突選「重新命名」後的新目的路徑
     case retarget(UUID, path: String)
+    /// 資料夾執行到時才列出的內容（佇列寫入樹並保存，繼續時不必重新列出）
+    case expand(UUID, children: [TransferNode])
 }
 
 /// 依工作樹逐節點執行（深度優先）。不持有狀態：每次繼續都以佇列保存的樹重新進入，
@@ -124,8 +126,13 @@ struct TransferExecutor: Sendable {
         } else {
             try await destination.makeDirectory(at: node.targetPath)
         }
+        var children = node.children ?? []
+        if node.isUnexpanded {
+            children = try await TransferPlanner.children(of: node, from: source)
+            await report(.expand(node.id, children: children))
+        }
         var allDone = true
-        for child in node.children ?? [] {
+        for child in children {
             try Task.checkCancellation()
             if try await runNode(child) != .done { allDone = false }
         }

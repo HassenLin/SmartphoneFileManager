@@ -55,6 +55,8 @@ public final class TransferQueue {
     public private(set) var jobs: [TransferJob]
     /// 等待使用者決定的衝突（FIFO；UI 一次顯示第一個）
     public private(set) var conflicts: [TransferConflict] = []
+    /// 執行中工作的傳輸速率（工作 ID → 速率）；每次開始執行時重新計算，不保存
+    public private(set) var rates: [UUID: TransferRate] = [:]
     /// 工作結束（完成／失敗／停止）時通知，app 據此重新載入窗格、顯示提示
     @ObservationIgnored public var onJobFinished: ((TransferJob) -> Void)?
 
@@ -185,6 +187,7 @@ public final class TransferQueue {
         jobs[index].message = nil
         save()
         let id = jobs[index].id
+        rates[id] = TransferRate()
         tasks[id] = Task { await self.execute(id, source: source, destination: destination) }
     }
 
@@ -218,6 +221,7 @@ public final class TransferQueue {
 
     private func finish(_ id: UUID, cancelled: Bool, failed: Bool = false) {
         tasks[id] = nil
+        rates[id] = nil
         guard let index = index(id) else { return }
         conflicts.removeAll { $0.jobID == id }
         if cancelled {
@@ -279,6 +283,12 @@ public final class TransferQueue {
             }
             // 每個節點結束都保存，關閉 app 後才知道從哪裡繼續
             if state != .running { save() }
+        case let .expand(nodeID, children):
+            jobs[index].updateNode(nodeID) {
+                $0.children = children
+                $0.expanded = nil
+            }
+            save()
         case let .retarget(nodeID, path):
             jobs[index].updateNode(nodeID) {
                 $0.targetPath = path
@@ -290,9 +300,16 @@ public final class TransferQueue {
 
     private func applyProgress(_ id: UUID, _ updates: [UUID: Int64]) {
         guard let index = index(id) else { return }
+        var moved: Int64 = 0
         for (nodeID, bytes) in updates {
-            jobs[index].updateNode(nodeID) { if $0.state == .running { $0.transferred = bytes } }
+            jobs[index].updateNode(nodeID) {
+                guard $0.state == .running else { return }
+                // 只累計增量：續傳的第一次回報是「已有的大小」，與節點保存的 transferred 相近，不會灌高速率
+                moved += max(0, bytes - $0.transferred)
+                $0.transferred = bytes
+            }
         }
+        rates[id]?.record(moved)
     }
 
     private func ask(_ conflict: TransferConflict) async -> ConflictAction {
