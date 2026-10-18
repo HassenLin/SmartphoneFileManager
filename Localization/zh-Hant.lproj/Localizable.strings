@@ -278,6 +278,7 @@
 "Homebrew is not installed. Install it first:" = "尚未安裝 Homebrew，請先安裝：";
 "Host" = "主機";
 "Host key" = "主機金鑰";
+"How many files the task queue uploads or downloads at once for this account. With a phone on the other side, transfers stay one at a time. FTP servers often limit connections per IP." = "工作佇列對此帳號一次上傳／下載幾個檔案。另一端是手機時仍逐檔傳輸。FTP 伺服器常限制每個 IP 的連線數。";
 "IP address" = "IP 位址";
 "Ignored (only “set …” lines are allowed): %@" = "已忽略（只接受「set …」開頭的行）：%@";
 "In Use" = "使用中";
@@ -388,6 +389,7 @@
 "Not used" = "未使用";
 "Not yet known (remembered on first connection)" = "尚未記錄（第一次連線時記住）";
 "Now: %@" = "目前：%@";
+"Now: %@ and %lld more" = "目前：%1$@ 等另外 %2$lld 個";
 "OK" = "好";
 "Off = use the default from Settings → Network" = "不勾選＝沿用 設定 → 網路 的預設值";
 "On the Android phone" = "在 Android 手機上";
@@ -532,6 +534,7 @@
 "Sign-in failed: %@" = "登入失敗：%@";
 "Signed in" = "已登入";
 "Signed in — region set to %@ for this account" = "已登入 — 此帳號的資料中心已設為%@";
+"Simultaneous transfers" = "同時傳輸數";
 "Size" = "大小";
 "Size (largest)" = "大小（最大）";
 "Size (smallest)" = "大小（最小）";

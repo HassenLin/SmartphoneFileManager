@@ -33,18 +33,58 @@ struct TransferExecutor: Sendable {
     var twoWay = false
     /// 本執行器是否為反方向節點而對調了來源／目的（避免反方向節點再次對調）
     var isSwapped = false
+    /// 並行傳輸名額（nil＝逐檔）。網路帳號選項「同時傳輸數」大於 1 時由佇列建立，整個工作共用
+    var slots: TransferSlots? = nil
 
     /// 反方向節點（雙向同步）用的執行器：來源與目的對調，其餘相同
     private var swapped: TransferExecutor? {
         guard let destination else { return nil }
         return TransferExecutor(jobID: jobID, source: destination, destination: source, staging: staging,
-                                report: report, progress: progress, ask: ask, options: options, twoWay: twoWay, isSwapped: true)
+                                report: report, progress: progress, ask: ask, options: options, twoWay: twoWay, isSwapped: true,
+                                slots: slots)
     }
 
     func run(_ nodes: [TransferNode]) async throws {
-        for node in nodes {
-            try Task.checkCancellation()
-            _ = try await runNode(node)
+        _ = try await runLevel(nodes)
+    }
+
+    /// 執行同一層的節點，回傳是否全部完成（`.done`；略過也算未完成，移動時父資料夾據此保留來源）。
+    ///
+    /// 有並行名額時，單檔傳輸取得名額後在背景傳，遍歷繼續往下；其他節點（資料夾、刪除、改名…）依序在這裡執行，
+    /// 子層的檔案同樣向共用名額排隊。本層結束前等所有背景檔案完成，父資料夾才判斷能否刪除來源。
+    private func runLevel(_ nodes: [TransferNode]) async throws -> Bool {
+        guard let slots else {
+            var allDone = true
+            for node in nodes {
+                try Task.checkCancellation()
+                if try await runNode(node) != .done { allDone = false }
+            }
+            return allDone
+        }
+        return try await withThrowingTaskGroup(of: NodeState.self) { group in
+            var allDone = true
+            for node in nodes {
+                try Task.checkCancellation()
+                let finished = node.state == .done || node.state == .skipped
+                if node.operation == .transferFile && !finished {
+                    try await slots.acquire()
+                    group.addTask {
+                        do {
+                            let state = try await runNode(node)
+                            await slots.release()
+                            return state
+                        } catch {
+                            await slots.release()
+                            throw error
+                        }
+                    }
+                } else if try await runNode(node) != .done {
+                    allDone = false
+                }
+            }
+            // 任一檔案拋出取消時，這裡重新拋出，TaskGroup 隨即取消其餘檔案（各自標為 partial）
+            for try await state in group where state != .done { allDone = false }
+            return allDone
         }
     }
 
@@ -131,11 +171,7 @@ struct TransferExecutor: Sendable {
             children = try await TransferPlanner.children(of: node, from: source)
             await report(.expand(node.id, children: children))
         }
-        var allDone = true
-        for child in children {
-            try Task.checkCancellation()
-            if try await runNode(child) != .done { allDone = false }
-        }
+        let allDone = try await runLevel(children)
         // 移動：子項全部完成才刪除來源資料夾（有略過或失敗的項目時保留，避免刪掉未搬走的檔案）
         if node.deleteSourceAfter {
             guard allDone else { return .failed }

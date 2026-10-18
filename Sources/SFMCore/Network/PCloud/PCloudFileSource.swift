@@ -8,10 +8,12 @@ import Foundation
 public struct PCloudFileSource: FileSource {
     public let account: NetworkAccount
     let client: PCloudClient
+    public let maxParallelTransfers: Int
 
     init(account: NetworkAccount, token: PCloudToken, options: ConnectionOptions.Resolved) {
         self.account = account
         self.client = PCloudClient(region: account.pcloudRegion, token: token, options: options)
+        self.maxParallelTransfers = max(1, options.parallelTransfers)
     }
 
     public var id: SourceID { account.sourceID }

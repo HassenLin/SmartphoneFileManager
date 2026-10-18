@@ -212,9 +212,9 @@ public struct TransferJob: Codable, Sendable, Identifiable {
     /// 還有資料夾尚未展開：`totalBytes` 只是目前已知的部分，之後會再增加
     public var isScanning: Bool { !planned || allNodes.contains { $0.isUnexpanded && $0.state != .done && $0.state != .skipped } }
 
-    /// 正在傳輸的檔案（深度優先、一次一個；沒有時為 nil）
-    public var currentFile: TransferNode? {
-        allNodes.first { $0.state == .running && $0.operation == .transferFile }
+    /// 正在傳輸的檔案（逐檔時最多一個；網路帳號設定了同時傳輸數時可能多個）
+    public var runningFiles: [TransferNode] {
+        allNodes.filter { $0.state == .running && $0.operation == .transferFile }
     }
 
     /// rsync 節點的結果摘要（Mac ↔ Mac 同步；其他工作為 nil）

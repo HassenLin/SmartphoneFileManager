@@ -64,6 +64,9 @@ public protocol FileSource: Sendable {
     /// 預設起始資料夾
     var homePath: String { get }
     var capabilities: SourceCapabilities { get }
+    /// 工作佇列對此來源同時傳輸的檔案數上限（預設 1＝逐檔）。網路帳號由選項「同時傳輸數」決定；
+    /// 裝置（adb、AFC、MTP）維持 1——單一 USB 通道並行不會更快，MTP 更只能序列存取
+    var maxParallelTransfers: Int { get }
 
     func list(_ directory: String, includeHidden: Bool) async throws -> [FileItem]
     func isDirectory(_ path: String) async throws -> Bool
@@ -101,6 +104,8 @@ public protocol FileSource: Sendable {
 }
 
 public extension FileSource {
+    var maxParallelTransfers: Int { 1 }
+
     func discard(_ path: String) async throws { try await delete(path) }
 
     /// 不需要進度的複製

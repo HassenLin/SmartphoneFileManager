@@ -98,7 +98,7 @@ private struct JobRow: View {
                     if let jobETA { Text(jobETA).font(.caption.monospacedDigit()).foregroundStyle(.secondary) }
                     Text(stateText).font(.caption).foregroundStyle(job.state == .failed ? .red : .secondary)
                 }
-                if job.state == .running, let file = job.currentFile { currentFileLine(file) }
+                if job.state == .running, let file = job.runningFiles.first { currentFileLine(file, count: job.runningFiles.count) }
                 if let message = job.message {
                     Text(message).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                 }
@@ -144,16 +144,19 @@ private struct JobRow: View {
                               : String(localized: "About \(time) left")
     }
 
-    /// 目前檔案：名稱、百分比、速率、剩餘時間（先有這一行，整體預估隨掃描逐步完整）
-    private func currentFileLine(_ file: TransferNode) -> some View {
+    /// 目前檔案：名稱、百分比、速率、剩餘時間（先有這一行，整體預估隨掃描逐步完整）。
+    /// 同時傳多個檔案時顯示第一個並註明共幾個；速率是全部的總和，單檔剩餘時間以平均分到的速率估算
+    private func currentFileLine(_ file: TransferNode, count: Int) -> some View {
         let fraction = file.size > 0 ? min(1, Double(file.transferred) / Double(file.size)) : 0
         var parts = [fraction.formatted(.percent.precision(.fractionLength(0)))]
         if let speed = rate?.bytesPerSecond { parts.append("\(ByteFormat.string(Int64(speed)))/s") }
         if let seconds = rate?.secondsRemaining(file.size - file.transferred) {
-            parts.append(String(localized: "\(DurationFormat.string(seconds)) left"))
+            parts.append(String(localized: "\(DurationFormat.string(seconds * Double(count))) left"))
         }
         return HStack(spacing: 6) {
-            Text("Now: \(file.name)").lineLimit(1).truncationMode(.middle)
+            Text(count > 1 ? String(localized: "Now: \(file.name) and \(count - 1) more")
+                           : String(localized: "Now: \(file.name)"))
+                .lineLimit(1).truncationMode(.middle)
             Text(parts.joined(separator: " · ")).monospacedDigit()
         }
         .font(.caption).foregroundStyle(.secondary)

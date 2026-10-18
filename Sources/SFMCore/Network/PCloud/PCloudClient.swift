@@ -21,7 +21,7 @@ final class PCloudClient: @unchecked Sendable {
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = TimeInterval(max(5, options.timeoutSeconds))
         config.timeoutIntervalForResource = 7 * 86_400
-        config.httpMaximumConnectionsPerHost = max(1, options.maxConnections)
+        config.httpMaximumConnectionsPerHost = options.connectionPoolSize
         config.tlsMinimumSupportedProtocolVersion = options.minimumTLS.secProtocol
         config.urlCache = nil
         self.session = URLSession(configuration: config, delegate: trust, delegateQueue: nil)

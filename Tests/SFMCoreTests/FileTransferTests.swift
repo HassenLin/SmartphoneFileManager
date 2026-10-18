@@ -10,6 +10,9 @@ final class FakeStore: @unchecked Sendable {
     var log: [String] = []
     /// 檔案修改時間（沒有＝列表不帶時間）。上傳時設為「現在」，模擬裝置無法保留修改時間
     var modified: [String: Date] = [:]
+    /// 同時進行中的下載數與其最大值（驗證並行傳輸上限）
+    var activeDownloads = 0
+    var maxActiveDownloads = 0
 
     func with<T>(_ body: (FakeStore) throws -> T) rethrows -> T {
         lock.lock(); defer { lock.unlock() }
@@ -23,6 +26,9 @@ struct FakeSource: FileSource {
     var nativeCopy = true
     /// 每次複製／下載／上傳前的延遲（測試暫停用）
     var delay: Duration = .zero
+    /// 同時傳輸數（模擬網路帳號的選項）
+    var parallel = 1
+    var maxParallelTransfers: Int { parallel }
     var homePath: String { "/" }
     var capabilities: SourceCapabilities { SourceCapabilities(nativeCopy: nativeCopy) }
 
@@ -60,6 +66,11 @@ struct FakeSource: FileSource {
         }
     }
     func download(_ path: String, to localURL: URL, expectedSize: Int64?, onProgress: @escaping @Sendable (Double) -> Void) async throws {
+        store.with { s in
+            s.activeDownloads += 1
+            s.maxActiveDownloads = max(s.maxActiveDownloads, s.activeDownloads)
+        }
+        defer { store.with { $0.activeDownloads -= 1 } }
         try await Task.sleep(for: delay)
         let (dirs, files) = store.with { s in
             (s.directories.filter { $0 == path || $0.hasPrefix(path + "/") },

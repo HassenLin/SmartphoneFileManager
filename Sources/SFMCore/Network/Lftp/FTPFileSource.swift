@@ -22,6 +22,9 @@ public struct FTPFileSource: FileSource {
     }
 
     /// 找 lftp（PATH + Homebrew）；未安裝時為 nil
+    /// 每個傳輸是獨立的 lftp 行程，並行即多條 FTP／SFTP 連線（注意伺服器的每 IP 連線數上限）
+    public var maxParallelTransfers: Int { max(1, command.options.parallelTransfers) }
+
     public static func locateTool() -> String? { AdbLocator.findExecutable("lftp") }
 
     public var id: SourceID { account.sourceID }

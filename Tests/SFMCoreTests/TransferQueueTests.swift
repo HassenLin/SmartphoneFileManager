@@ -168,6 +168,65 @@ struct TransferQueueTests {
         #expect(!FileManager.default.fileExists(atPath: QueueStore(directory: storeDirectory).staging(for: job.id).path))
     }
 
+    @Test func parallelTransfersRespectLimitAcrossNestedFolders() async throws {
+        let store = FakeStore()
+        store.directories.formUnion(["/a", "/a/dir", "/a/dir/sub", "/b"])
+        for index in 0..<5 { store.files["/a/dir/f\(index).txt"] = Data("\(index)".utf8) }
+        for index in 0..<4 { store.files["/a/dir/sub/g\(index).txt"] = Data("\(index)".utf8) }
+        var cloud = FakeSource(id: .network(UUID()), store: store, nativeCopy: false, delay: .milliseconds(40))
+        cloud.parallel = 3
+        var other = FakeSource(id: .network(UUID()), store: FakeStore(), nativeCopy: false)
+        other.parallel = 3
+        other.store.directories.insert("/b")
+        let queue = makeQueue([cloud, other])
+        let job = try await finished(queue, queue.enqueue(.move, items: [FileItem(path: "/a/dir", isDirectory: true, size: 0)],
+                                                          from: cloud.id, to: other.id, directory: "/b"))
+        #expect(job.state == .completed)
+        #expect(other.store.files.count == 9 && other.store.files["/b/dir/sub/g3.txt"] == Data("3".utf8))
+        // 巢狀資料夾共用名額：確實並行，但從不超過 3
+        #expect(store.maxActiveDownloads > 1 && store.maxActiveDownloads <= 3)
+        // 移動：全部傳完才刪來源資料夾
+        #expect(store.files.isEmpty && !store.directories.contains("/a/dir"))
+    }
+
+    @Test func pauseDuringParallelTransfersThenResume() async throws {
+        let store = FakeStore()
+        store.directories.formUnion(["/a", "/a/dir", "/a/dir/sub"])
+        for index in 0..<6 { store.files["/a/dir/f\(index).txt"] = Data("\(index)".utf8) }
+        for index in 0..<3 { store.files["/a/dir/sub/g\(index).txt"] = Data("\(index)".utf8) }
+        var cloud = FakeSource(id: .network(UUID()), store: store, nativeCopy: false, delay: .milliseconds(120))
+        cloud.parallel = 3
+        var other = FakeSource(id: .network(UUID()), store: FakeStore(), nativeCopy: false)
+        other.parallel = 3
+        other.store.directories.insert("/b")
+        let queue = makeQueue([cloud, other])
+        let id = try #require(queue.enqueue(.copy, items: [FileItem(path: "/a/dir", isDirectory: true, size: 0)],
+                                            from: cloud.id, to: other.id, directory: "/b"))
+        // 有檔案正在並行傳輸時暫停：所有進行中的檔案轉 partial，沒有節點停在 running
+        try await wait { (queue.job(id)?.runningFiles.count ?? 0) > 1 }
+        queue.pause(id)
+        try await wait { queue.job(id)?.state == .paused }
+        let paused = try #require(queue.job(id))
+        #expect(!paused.allNodes.contains { $0.state == .running })
+        #expect(paused.allNodes.contains { $0.state == .partial })
+        queue.resume(id)
+        let job = try await finished(queue, id)
+        #expect(job.state == .completed && other.store.files.count == 9)
+        #expect(store.maxActiveDownloads <= 3)
+    }
+
+    @Test func phoneSideKeepsTransfersSequential() async throws {
+        let (android, store) = makeDevice(.android("A"), delay: .milliseconds(20))
+        store.files["/a/dir/z.txt"] = Data("z".utf8)
+        var cloud = FakeSource(id: .network(UUID()), store: FakeStore(), nativeCopy: false)
+        cloud.parallel = 4
+        cloud.store.directories.insert("/b")
+        let queue = makeQueue([android, cloud])
+        let job = try await finished(queue, queue.enqueue(.copy, items: [FileItem(path: "/a/dir", isDirectory: true, size: 0)],
+                                                          from: android.id, to: cloud.id, directory: "/b"))
+        #expect(job.state == .completed && store.maxActiveDownloads == 1)
+    }
+
     @Test func crossDeviceMoveDeletesSourcesAfterCopy() async throws {
         let (android, androidStore) = makeDevice(.android("A"))
         let (iphone, iphoneStore) = makeDevice(.iphone("U"), nativeCopy: false)

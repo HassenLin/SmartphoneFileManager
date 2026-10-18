@@ -10,6 +10,7 @@ public struct WebDAVFileSource: FileSource {
     public let account: NetworkAccount
     let client: WebDAVClient
     let partialWrite: PartialWriteMode
+    public let maxParallelTransfers: Int
 
     init(account: NetworkAccount, password: String, options: ConnectionOptions.Resolved) {
         self.account = account
@@ -21,6 +22,7 @@ public struct WebDAVFileSource: FileSource {
         self.client = WebDAVClient(baseURL: comps.url ?? URL(string: "https://invalid")!, username: account.username,
                                    password: password, pinnedSHA256: account.pinnedCertSHA256, options: options)
         self.partialWrite = options.partialWrite
+        self.maxParallelTransfers = max(1, options.parallelTransfers)
     }
 
     public var id: SourceID { account.sourceID }

@@ -51,7 +51,7 @@ final class WebDAVClient: @unchecked Sendable {
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = TimeInterval(max(5, options.timeoutSeconds))
         config.timeoutIntervalForResource = 7 * 86_400   // 大檔傳輸不設總時限（逾時只看「多久沒資料」）
-        config.httpMaximumConnectionsPerHost = max(1, options.maxConnections)
+        config.httpMaximumConnectionsPerHost = options.connectionPoolSize
         config.tlsMinimumSupportedProtocolVersion = options.minimumTLS.secProtocol
         config.urlCache = nil
         config.requestCachePolicy = .reloadIgnoringLocalCacheData

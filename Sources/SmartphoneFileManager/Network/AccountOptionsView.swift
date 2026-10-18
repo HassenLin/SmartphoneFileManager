@@ -30,6 +30,10 @@ struct ConnectionOptionsForm: View {
                           overridable: defaults != nil) { Stepper("\($0.wrappedValue)", value: $0, in: 1...120) }
                 OptionRow("Max connections", value: $options.maxConnections, fallback: resolvedDefaults.maxConnections,
                           overridable: defaults != nil) { Stepper("\($0.wrappedValue)", value: $0, in: 1...16) }
+                OptionRow("Simultaneous transfers", value: $options.parallelTransfers, fallback: resolvedDefaults.parallelTransfers,
+                          overridable: defaults != nil) { Stepper("\($0.wrappedValue)", value: $0, in: 1...8) }
+                Text("How many files the task queue uploads or downloads at once for this account. With a phone on the other side, transfers stay one at a time. FTP servers often limit connections per IP.")
+                    .font(.caption).foregroundStyle(.secondary)
                 if shows(.ftp, .sftp) {
                     OptionRow("Disconnect when idle (seconds)", value: $options.idleSeconds, fallback: resolvedDefaults.idleSeconds,
                               overridable: defaults != nil) { Stepper("\($0.wrappedValue)", value: $0, in: 10...3600, step: 10) }

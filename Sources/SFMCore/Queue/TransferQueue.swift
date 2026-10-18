@@ -157,9 +157,19 @@ public final class TransferQueue {
     public func answer(_ conflictID: UUID, action: ConflictAction, applyToAll: Bool) {
         guard let conflict = conflicts.first(where: { $0.id == conflictID }) else { return }
         conflicts.removeAll { $0.id == conflictID }
+        if applyToAll {
+            // 並行傳輸時同一工作可能已有其他衝突在排隊：一併以同樣的動作回答（執行器會把不能續傳的「續傳」改為覆寫）
+            for other in conflicts where other.jobID == conflict.jobID {
+                answers.removeValue(forKey: other.id)?.resume(returning: action)
+            }
+            conflicts.removeAll { $0.jobID == conflict.jobID }
+        }
         if let index = index(conflict.jobID) {
             if applyToAll { jobs[index].conflictPolicy = action }
-            if jobs[index].state == .waitingForUser { jobs[index].state = .running }
+            // 並行時可能還有同工作的其他衝突待回答：全部答完才回到執行中
+            if jobs[index].state == .waitingForUser, !conflicts.contains(where: { $0.jobID == conflict.jobID }) {
+                jobs[index].state = .running
+            }
         }
         answers.removeValue(forKey: conflictID)?.resume(returning: action)
         save()
@@ -203,12 +213,16 @@ public final class TransferQueue {
                 save()
             }
             guard let roots = self.job(id)?.roots else { return }
-            let executor = TransferExecutor(
+            // 同時傳輸數：取涉及的非 Mac 來源中最小的上限（Mac 本機不限制；裝置固定 1，所以 手機 ⇄ 雲端 仍逐檔）
+            let parallel = [source, destination].compactMap { $0 }.filter { $0.id.kind != .mac }
+                .map(\.maxParallelTransfers).min() ?? 1
+            var executor = TransferExecutor(
                 jobID: id, source: source, destination: destination, staging: store.staging(for: id),
                 report: { [weak self] event in await self?.apply(id, event) },
                 progress: { nodeID, bytes in buffer.submit(nodeID, bytes) },
                 ask: { [weak self] conflict in await self?.ask(conflict) ?? .skip },
                 options: job.syncOptions, twoWay: job.syncTwoWay == true)
+            if parallel > 1 { executor.slots = TransferSlots(parallel) }
             try await executor.run(roots)
             finish(id, cancelled: false)
         } catch is CancellationError {

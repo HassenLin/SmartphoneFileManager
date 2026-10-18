@@ -21,6 +21,8 @@ public struct ConnectionOptions: Codable, Hashable, Sendable {
     public var retries: Int?
     public var retryDelaySeconds: Int?
     public var maxConnections: Int?
+    /// 同時傳輸的檔案數（工作佇列對此帳號一次上傳／下載幾個檔案；1＝逐檔）。見 `FileSource.maxParallelTransfers`
+    public var parallelTransfers: Int?
     /// 閒置多久後斷線（lftp `net:idle`）
     public var idleSeconds: Int?
 
@@ -53,6 +55,7 @@ public struct ConnectionOptions: Codable, Hashable, Sendable {
         retries = r.retries
         retryDelaySeconds = r.retryDelaySeconds
         maxConnections = r.maxConnections
+        parallelTransfers = r.parallelTransfers
         idleSeconds = r.idleSeconds
         ftpCharset = r.ftpCharset
         activeAddress = r.activeAddress
@@ -73,6 +76,7 @@ public struct ConnectionOptions: Codable, Hashable, Sendable {
             retries: retries ?? defaults.retries,
             retryDelaySeconds: retryDelaySeconds ?? defaults.retryDelaySeconds,
             maxConnections: maxConnections ?? defaults.maxConnections,
+            parallelTransfers: parallelTransfers ?? defaults.parallelTransfers,
             idleSeconds: idleSeconds ?? defaults.idleSeconds,
             ftpCharset: ftpCharset ?? defaults.ftpCharset,
             activeAddress: activeAddress ?? defaults.activeAddress,
@@ -90,6 +94,8 @@ public struct ConnectionOptions: Codable, Hashable, Sendable {
         public var retries = 2
         public var retryDelaySeconds = 3
         public var maxConnections = 4
+        /// 預設逐檔（與加入此選項前相同）；雲端／WebDAV 調高可明顯加快大量小檔
+        public var parallelTransfers = 1
         public var idleSeconds = 180
         public var ftpCharset = ""
         public var activeAddress = ""
@@ -102,7 +108,8 @@ public struct ConnectionOptions: Codable, Hashable, Sendable {
 
         public init() {}
 
-        public init(timeoutSeconds: Int, retries: Int, retryDelaySeconds: Int, maxConnections: Int, idleSeconds: Int,
+        public init(timeoutSeconds: Int, retries: Int, retryDelaySeconds: Int, maxConnections: Int,
+                    parallelTransfers: Int = 1, idleSeconds: Int,
                     ftpCharset: String, activeAddress: String, activePortRange: String, serverTimeZone: String,
                     verifyCertificate: Bool, minimumTLS: TLSVersion, extraLftpCommands: String,
                     partialWrite: PartialWriteMode) {
@@ -110,6 +117,7 @@ public struct ConnectionOptions: Codable, Hashable, Sendable {
             self.retries = retries
             self.retryDelaySeconds = retryDelaySeconds
             self.maxConnections = maxConnections
+            self.parallelTransfers = parallelTransfers
             self.idleSeconds = idleSeconds
             self.ftpCharset = ftpCharset
             self.activeAddress = activeAddress
@@ -122,6 +130,9 @@ public struct ConnectionOptions: Codable, Hashable, Sendable {
         }
 
         public static let standard = Resolved()
+
+        /// HTTP 連線池大小：至少容納同時傳輸數，否則多出的傳輸只會在連線池排隊
+        public var connectionPoolSize: Int { max(1, maxConnections, parallelTransfers) }
     }
 }
 
@@ -144,6 +155,7 @@ public extension ConnectionOptions.Resolved {
             retries: try c.decodeIfPresent(Int.self, forKey: .retries) ?? d.retries,
             retryDelaySeconds: try c.decodeIfPresent(Int.self, forKey: .retryDelaySeconds) ?? d.retryDelaySeconds,
             maxConnections: try c.decodeIfPresent(Int.self, forKey: .maxConnections) ?? d.maxConnections,
+            parallelTransfers: try c.decodeIfPresent(Int.self, forKey: .parallelTransfers) ?? d.parallelTransfers,
             idleSeconds: try c.decodeIfPresent(Int.self, forKey: .idleSeconds) ?? d.idleSeconds,
             ftpCharset: try c.decodeIfPresent(String.self, forKey: .ftpCharset) ?? d.ftpCharset,
             activeAddress: try c.decodeIfPresent(String.self, forKey: .activeAddress) ?? d.activeAddress,
