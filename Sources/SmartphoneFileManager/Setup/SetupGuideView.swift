@@ -4,7 +4,7 @@ import SwiftUI
 
 /// 安裝導引的主題
 enum SetupTopic: String, CaseIterable, Identifiable {
-    case android, iphone, scrcpy
+    case android, iphone, scrcpy, network
 
     var id: String { rawValue }
 
@@ -13,6 +13,7 @@ enum SetupTopic: String, CaseIterable, Identifiable {
         case .android: return "Android (adb)"
         case .iphone: return "iPhone"
         case .scrcpy: return "Screen Mirroring"
+        case .network: return "FTP / SFTP"
         }
     }
 }
@@ -25,6 +26,7 @@ enum SetupLinks {
     static let homebrew = URL(string: "https://brew.sh")!
     static let libimobiledevice = URL(string: "https://libimobiledevice.org")!
     static let scrcpy = URL(string: "https://github.com/Genymobile/scrcpy")!
+    static let lftp = URL(string: "https://lftp.yar.ru")!
 }
 
 /// 安裝指令
@@ -33,6 +35,7 @@ enum SetupCommands {
     static let adb = "brew install --cask android-platform-tools"
     static let iphone = "brew install libimobiledevice ideviceinstaller"
     static let scrcpy = "brew install scrcpy"
+    static let lftp = "brew install lftp"
 }
 
 /// 安裝導引：偵測 adb／Homebrew／libimobiledevice／scrcpy，缺少時提供步驟、官方連結與一鍵安裝指令。
@@ -72,6 +75,7 @@ struct SetupGuideView: View {
                         case .android: androidGuide(report)
                         case .iphone: iphoneGuide(report)
                         case .scrcpy: scrcpyGuide(report)
+                        case .network: networkGuide(report)
                         }
                     } else {
                         ProgressView().frame(maxWidth: .infinity)
@@ -99,6 +103,7 @@ struct SetupGuideView: View {
         case .android: return report.adbReady
         case .iphone: return report.iphoneReady && report.iphoneAppsReady
         case .scrcpy: return report.scrcpyReady
+        case .network: return report.lftpReady
         }
     }
 
@@ -207,6 +212,27 @@ struct SetupGuideView: View {
                 Text("Or set its path in Settings → Screen Mirroring.").foregroundStyle(.secondary)
                 Link(destination: SetupLinks.scrcpy) { Label("scrcpy on GitHub", systemImage: "safari") }
             }
+        }
+    }
+
+    // MARK: 網路（FTP／SFTP）
+
+    @ViewBuilder
+    private func networkGuide(_ report: ToolReport) -> some View {
+        StatusRow(ready: report.lftpReady,
+                  readyText: String(localized: "lftp is installed"),
+                  missingText: String(localized: "lftp is not installed (needed for FTP, FTPS and SFTP accounts)"),
+                  detail: report.lftpPath ?? "")
+        if !report.lftpReady {
+            GuideSection(title: "Install lftp") {
+                homebrewPrerequisite(report)
+                CommandBox(command: SetupCommands.lftp)
+                Link(destination: SetupLinks.lftp) { Label("lftp website", systemImage: "safari") }
+            }
+        }
+        GuideSection(title: "WebDAV and pCloud") {
+            Text("WebDAV and pCloud accounts need no extra tools. pCloud sign-in needs your own pCloud app (client ID and secret) — see Settings → Network.")
+                .foregroundStyle(.secondary)
         }
     }
 

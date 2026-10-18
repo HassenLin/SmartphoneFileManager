@@ -16,12 +16,15 @@ public struct ToolReport: Sendable, Equatable {
     /// 列出 iPhone 上可分享檔案的 App（Finder「檔案」分頁）；沒有時只能看媒體區
     public var ideviceInstallerPath: String?
     public var scrcpyPath: String?
+    /// FTP／FTPS／SFTP 網路帳號用（`brew install lftp`）
+    public var lftpPath: String?
 
     public var adbReady: Bool { adbVersion != nil }
     /// iPhone 需要 idevice_id（列裝置）與 afcclient（檔案）兩個工具
     public var iphoneReady: Bool { afcclientPath != nil && ideviceIDPath != nil }
     public var iphoneAppsReady: Bool { ideviceInstallerPath != nil }
     public var scrcpyReady: Bool { scrcpyPath != nil }
+    public var lftpReady: Bool { lftpPath != nil }
 }
 
 public enum ToolDetector {
@@ -38,6 +41,7 @@ public enum ToolDetector {
         report.ideviceIDPath = AdbLocator.findExecutable("idevice_id")
         report.ideviceInstallerPath = AdbLocator.findExecutable("ideviceinstaller")
         report.scrcpyPath = ScrcpyLauncher.locate()
+        report.lftpPath = FTPFileSource.locateTool()
         return report
     }
 }

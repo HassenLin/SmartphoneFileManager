@@ -90,6 +90,8 @@ final class AppModel {
     /// 彈出視窗要編輯的同步專案；nil 時以目前左右窗格找既有專案或建立新專案
     var syncProjectToEdit: SyncProject.ID?
     var pendingDeletion: PendingDeletion?
+    /// 帳號視窗要選取／新增的帳號（開啟視窗前設定，視窗消化後清空）
+    var accountWindowRequest: AccountWindowRequest?
     var pendingInstall: (side: PaneSide, item: FileItem)?
     /// app 內剪貼簿（剪下／拷貝後尚未貼上的項目），狀態列顯示用；實際貼上以系統剪貼簿內容為準
     private(set) var clipboard: FilePayload?

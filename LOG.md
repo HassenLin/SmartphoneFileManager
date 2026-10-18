@@ -1,5 +1,17 @@
 # LOG
 
+- 2026-10-18｜**新增網路來源：WebDAV、FTP／FTPS（主動／被動、explicit／implicit）、SFTP、pCloud（美國／歐洲）**
+  - 架構：`SourceID.Kind.network`（deviceID＝帳號 id），協定 → 實作只在 `NetworkSourceFactory`；佇列、衝突、續傳、同步、書籤不需修改。
+  - 帳號：`NetworkAccount`＋`ConnectionOptions`（每欄可覆寫全域預設），存 `Application Support/…/accounts.json`；密碼／token 存鑰匙圈（`CredentialStore`，
+    主機／帳號變更時搬移密碼）。
+  - UI：帳號清單視窗（⌥⌘K）、帳號設定（測試連線、憑證釘選、pCloud 登入）、選項視窗；設定 → 網路（全域預設、pCloud App）；來源選單、窗格錯誤畫面、安裝導引（lftp）。
+  - WebDAV：移植 nas_webdav 用戶端並 async 化；Range 續傳下載、部分寫入探測續傳上傳、MOVE／COPY 伺服器端完成。
+  - FTP／SFTP：lftp 子行程。實測發現 lftp 4.9.3＋OpenSSL 3 在 TLS 1.3 上傳會截斷 → FTPS 以 `OPENSSL_CONF` 限 TLS 1.2，上傳後驗證大小。
+    SFTP 主機金鑰記在 app 專用 known_hosts（路徑含空白需再包雙引號，否則 ssh 切成多個檔案）。
+  - pCloud：OAuth2 loopback（127.0.0.1:53682），依回呼 hostname／locationid 決定地區並以對應 host 換 token。
+  - 測試 92 項通過（新增 28 項）；網路實機測試以本機 pyftpdlib／wsgidav／asyncssh 伺服器通過（FTP 被動／主動、FTPS 兩種、SFTP、WebDAV）。
+  - 待驗收：Synology https WebDAV、pCloud 實際帳號登入、UI 端到端操作。
+
 - 2026-10-16｜**書籤選單依窗格目前的裝置篩選**
   - 資料夾書籤只列此裝置的（舊版「任一台 Android」書籤列在每一台 Android）；同步專案列任一邊在此裝置的。
   - 其他裝置的書籤與同步專案收在「其他裝置（N）」子選單，未連線裝置的項目仍可開啟或刪除。

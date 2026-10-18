@@ -4,7 +4,7 @@
 # 做的事（依序）：
 #   1. 檢查 macOS 版本（14+）與完整 Xcode 的 Swift toolchain（只有 Command Line Tools 不行，見 xcode-env.sh）
 #   2. 必要相依（Homebrew）：libmtp（MTP，建置與執行都需要）、adb（android-platform-tools）
-#      選用相依（Homebrew）：libimobiledevice + ideviceinstaller（iPhone）、scrcpy（螢幕鏡像）
+#      選用相依（Homebrew）：libimobiledevice + ideviceinstaller（iPhone）、scrcpy（螢幕鏡像）、lftp（FTP／SFTP）
 #   3. 跑核心層單元測試（可略過）
 #   4. 以 release 組出 .app，安裝到 /Applications（無寫入權限時改 ~/Applications）
 #
@@ -94,6 +94,13 @@ if command -v brew >/dev/null 2>&1; then
         fi
     else
         info "scrcpy 已安裝"
+    fi
+    if ! command -v lftp >/dev/null 2>&1; then
+        if ask "安裝 lftp（FTP／FTPS／SFTP 網路帳號需要）？"; then
+            brew install lftp
+        fi
+    else
+        info "lftp 已安裝"
     fi
 else
     warn "未安裝 Homebrew：iPhone 存取（libimobiledevice）與螢幕鏡像（scrcpy）需自行安裝。https://brew.sh"

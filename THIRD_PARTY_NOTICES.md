@@ -10,6 +10,7 @@
 | 來源 | 授權 | 使用方式 |
 |---|---|---|
 | [wkbin/AdbFileManager](https://github.com/wkbin/AdbFileManager) v3.1.2（Kotlin／Compose）<br>Copyright (c) 2023 Kebin Wang | MIT | 本專案為其 macOS SwiftUI 移植：功能設計、adb 操作流程、介面文字與部分邏輯源自原版。原版 MIT 授權聲明保留於 [`LICENSE`](LICENSE)。 |
+| nas_webdav（NAS Bridge，同作者）`WebDAVClient`、`MultistatusParser`、`TLSTrustDelegate`、`KeychainStore` | 同作者自有程式碼 | 移植為 `Sources/SFMCore/Network/WebDAV/` 與 `CredentialStore`（改 async、加進度與續傳） |
 | 同上專案的 `tools/clipboard-helper/ClipboardHelper.java` | MIT | `vendor/clipboard-helper.dex.b64` 為其編譯產物（自原版 `src/main/composeResources/files/android/` 取得），於 Android 端執行以寫入剪貼簿。 |
 
 ## 2. 組 app 時內附的二進位檔（不收錄於 repo）
@@ -34,6 +35,7 @@
 | [libimobiledevice](https://libimobiledevice.org)（`afcclient`、`idevice_id`、`ideviceinfo`） | LGPL-2.1-or-later | iPhone 檔案存取（AFC、house_arrest） |
 | [ideviceinstaller](https://github.com/libimobiledevice/ideviceinstaller) | GPL-2.0-or-later | 列出 iPhone 上可分享檔案的 App |
 | [scrcpy](https://github.com/Genymobile/scrcpy) | Apache-2.0 | Android 螢幕鏡像 |
+| [lftp](https://lftp.yar.ru) | GPL-3.0-or-later | FTP／FTPS／SFTP 網路帳號（每個操作一個 `lftp -c` 子行程；SFTP 由 lftp 呼叫系統 `ssh`） |
 | [Homebrew](https://brew.sh) | BSD-2-Clause | 安裝導引中建議的套件管理器 |
 
 ## 5. 系統框架與資源

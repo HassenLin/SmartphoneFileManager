@@ -47,6 +47,23 @@ public struct ConnectionOptions: Codable, Hashable, Sendable {
 
     public init() {}
 
+    /// 每欄都有值（全域預設的編輯表單與帳號選項共用同一個表單時用）
+    public init(resolved r: Resolved) {
+        timeoutSeconds = r.timeoutSeconds
+        retries = r.retries
+        retryDelaySeconds = r.retryDelaySeconds
+        maxConnections = r.maxConnections
+        idleSeconds = r.idleSeconds
+        ftpCharset = r.ftpCharset
+        activeAddress = r.activeAddress
+        activePortRange = r.activePortRange
+        serverTimeZone = r.serverTimeZone
+        verifyCertificate = r.verifyCertificate
+        minimumTLS = r.minimumTLS
+        extraLftpCommands = r.extraLftpCommands
+        partialWrite = r.partialWrite
+    }
+
     /// 是否有任何一項覆寫全域預設（清單顯示「自訂選項」標記用）
     public var hasOverrides: Bool { self != ConnectionOptions() }
 

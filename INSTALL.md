@@ -6,7 +6,8 @@ xcode-select 指向 Command Line Tools 時自動改用已安裝的 Xcode；自�
 `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`（或在指令前加 `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`）。
 不需 Java、Gradle。
 必要：Homebrew 的 `libmtp`（MTP 裝置存取）與 adb（`android-platform-tools`，已有 Android SDK 可沿用）；`install.sh` 會自動安裝。
-選用：Homebrew 的 `libimobiledevice` + `ideviceinstaller`（iPhone 媒體區與 App 文件）、`scrcpy`（Android 鏡像）。
+選用：Homebrew 的 `libimobiledevice` + `ideviceinstaller`（iPhone 媒體區與 App 文件）、`scrcpy`（Android 鏡像）、
+`lftp`（FTP／FTPS／SFTP 網路帳號；WebDAV 與 pCloud 不需要）。
 缺少任何一項時，app 內「輔助說明 → 安裝導引」會顯示步驟、官方下載連結與安裝指令。
 
 ## 一鍵安裝（建議）
@@ -30,6 +31,9 @@ xcode-select 指向 Command Line Tools 時自動改用已安裝的 Xcode；自�
 - 螢幕鏡像：`brew install scrcpy`，或在 設定 → 螢幕鏡像 指定路徑。
 - adb 來源可在 設定 → ADB 切換（內附／自訂／系統 PATH・Homebrew・Android SDK）。
 - iPhone：接上、解鎖、點「信任這部電腦」；未安裝 libimobiledevice 時來源選單會提示。
+- 網路帳號：「檔案 → 網路帳號…」新增。FTP／SFTP 需 `brew install lftp`。
+- pCloud：到 https://docs.pcloud.com/my_apps/ 建立 App，把 Redirect URI `http://127.0.0.1:53682/` 加入允許清單，
+  在 設定 → 網路 填 Client ID 與 Secret（Secret 存鑰匙圈）；同一個 App 可登入美國與歐洲帳號，地區於登入時自動判定。
 - 新增/修改 UI 字串後：在 `tools/zh-Hant.json` 補繁中翻譯，執行 `python3 tools/gen-strings.py`（簡中自動產生；不滿意的寫進 `tools/zh-Hans.overrides.json`）。
   擷取全部鍵：`swift build -Xswiftc -emit-localized-strings -Xswiftc -emit-localized-strings-path -Xswiftc <dir>`，
   再以 `--check <keys.json>` 檢查缺漏。

@@ -4,7 +4,7 @@ import SwiftUI
 
 /// Smartphone File Manager（macOS 原生版）。
 ///
-/// 場景：主視窗（雙窗格檔案管理）＋ 終端機視窗（多分頁）＋ 設定視窗。
+/// 場景：主視窗（雙窗格檔案管理）＋ 終端機視窗（多分頁）＋ 網路帳號視窗 ＋ 設定視窗。
 /// 全部共用同一個 `AppModel`，所以終端機分頁、書籤、傳輸狀態在視窗之間一致。
 @main
 struct SmartphoneFileManagerApp: App {
@@ -26,6 +26,8 @@ struct SmartphoneFileManagerApp: App {
                 Button("New Folder…") { app.sheet = .newFolder(app.activeSide) }
                     .keyboardShortcut("n", modifiers: [.command, .shift])
                     .disabled(app.pane(app.activeSide).source == nil)
+                Divider()
+                NetworkAccountsCommand()
             }
             CommandGroup(replacing: .help) {
                 Button("Setup Guide…") { app.sheet = .setupGuide(.android) }
@@ -51,6 +53,11 @@ struct SmartphoneFileManagerApp: App {
         }
         .defaultSize(width: 860, height: 520)
 
+        Window("Network Accounts", id: AccountListWindow.windowID) {
+            AccountListWindow(app: app)
+        }
+        .defaultSize(width: 1120, height: 640)
+
         Settings {
             SettingsView(app: app)
         }
@@ -71,5 +78,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // `swift run` 直接執行（沒有 .app 外殼）時也要成為一般前景 app，才有 Dock 圖示與選單列
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
+    }
+}
+
+/// 選單列「檔案 → 網路帳號…」（⌥⌘K）。獨立成 View 才拿得到 `openWindow`
+private struct NetworkAccountsCommand: View {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Button("Network Accounts…") { openWindow(id: AccountListWindow.windowID) }
+            .keyboardShortcut("k", modifiers: [.command, .option])
     }
 }

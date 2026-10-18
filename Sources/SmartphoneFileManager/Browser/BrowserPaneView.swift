@@ -13,6 +13,7 @@ struct BrowserPaneView: View {
     let side: PaneSide
     /// 藍框狀態（見 `DropTargetState`：不可用窗格的 @State Bool，否則藍框一變整個窗格重算）
     @State private var dropState = DropTargetState()
+    @Environment(\.openWindow) private var openWindow
 
     private var model: BrowserModel { app.pane(side) }
 
@@ -96,6 +97,21 @@ struct BrowserPaneView: View {
                 }
                 .disabled(!option.enabled)
             }
+            Divider()
+            // 網路帳號（WebDAV／FTP／SFTP／pCloud）
+            ForEach(app.networkSourceOptions) { option in
+                Button {
+                    app.selectSource(option.id, for: side)
+                } label: {
+                    Label(option.title, systemImage: option.id == model.sourceID ? "checkmark" : option.symbol)
+                }
+            }
+            Menu("New Network Account") {
+                ForEach(NetworkProtocol.allCases) { networkProtocol in
+                    Button(networkProtocol.title) { openAccounts(.new(networkProtocol)) }
+                }
+            }
+            Button("Network Accounts…") { openAccounts(nil) }
             Divider()
             if !app.devices.iphoneToolsInstalled {
                 Button("Set Up iPhone Access…") { app.sheet = .setupGuide(.iphone) }
@@ -288,6 +304,8 @@ struct BrowserPaneView: View {
             } actions: {
                 Button("Setup Guide…") { app.sheet = .setupGuide(.iphone) }
             }
+        case .network:
+            networkUnavailableView
         case .mtp:
             ContentUnavailableView {
                 Label(MTP.isAvailable ? "MTP device not connected" : "MTP access is not set up",
@@ -303,6 +321,35 @@ struct BrowserPaneView: View {
         default:
             EmptyView()
         }
+    }
+
+    /// 網路帳號無法使用：帳號已刪除、缺 lftp、鑰匙圈沒有密碼／尚未登入 pCloud
+    @ViewBuilder
+    private var networkUnavailableView: some View {
+        let account = app.accounts.account(for: model.sourceID)
+        let reason = app.networkUnavailableReason(model.sourceID)
+        ContentUnavailableView {
+            Label(account == nil ? String(localized: "Network account was deleted") : (reason?.localizedDescription ?? ""),
+                  systemImage: "network.slash")
+        } description: {
+            if reason == .lftpMissing {
+                Text("FTP and SFTP use the free lftp tool.")
+            } else if account?.protocol == .pcloud {
+                Text("Sign in with pCloud in the account settings.")
+            }
+        } actions: {
+            if reason == .lftpMissing {
+                Button("Setup Guide…") { app.sheet = .setupGuide(.network) }
+            }
+            if let account {
+                Button("Edit Account…") { openAccounts(.select(account.id)) }
+            }
+        }
+    }
+
+    private func openAccounts(_ request: AccountWindowRequest?) {
+        app.accountWindowRequest = request
+        openWindow(id: AccountListWindow.windowID)
     }
 
     private func chooseMacFolder() {

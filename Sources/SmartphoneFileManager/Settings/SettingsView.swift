@@ -27,8 +27,9 @@ struct SettingsView: View {
             GeneralSettingsView(app: app).tabItem { Label("General", systemImage: "gearshape") }
             AdbSettingsView(app: app).tabItem { Label("ADB", systemImage: "cable.connector") }
             ScrcpySettingsView().tabItem { Label("Screen Mirroring", systemImage: "rectangle.on.rectangle") }
+            NetworkSettingsView(app: app).tabItem { Label("Network", systemImage: "network") }
         }
-        .frame(width: 520)
+        .frame(width: 560)
     }
 }
 
@@ -157,5 +158,63 @@ private struct ScrcpySettingsView: View {
             Toggle("Keep device awake", isOn: $stayAwake)
         }
         .formStyle(.grouped)
+    }
+}
+
+/// 網路帳號的全域預設選項（帳號選項未覆寫的欄位沿用這裡）＋ pCloud OAuth app 設定
+private struct NetworkSettingsView: View {
+    let app: AppModel
+    @State private var defaults = ConnectionOptions()
+    @State private var clientID = ""
+    @State private var clientSecret = ""
+    @State private var loaded = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ConnectionOptionsForm(options: $defaults, defaults: nil, protocol: nil)
+                .frame(height: 380)
+            Form {
+                Section {
+                    TextField("Client ID", text: $clientID)
+                    SecureField("Client secret", text: $clientSecret)
+                    LabeledContent("Redirect URI") {
+                        Text(PCloudOAuth.redirectURI).font(.system(.body, design: .monospaced)).textSelection(.enabled)
+                    }
+                    Link(destination: PCloudOAuth.appsPage) { Label("Create a pCloud app…", systemImage: "safari") }
+                } header: {
+                    Text("pCloud sign-in")
+                } footer: {
+                    Text("Create an app in pCloud “My applications” and add the redirect URI above. The same app works for US and Europe accounts. The secret is kept in the login keychain.")
+                        .font(.caption)
+                }
+            }
+            .formStyle(.grouped)
+            HStack {
+                if let errorMessage { Text(errorMessage).foregroundStyle(.red).font(.caption) }
+                Spacer()
+                Button("Restore Defaults") { defaults = ConnectionOptions(resolved: .standard) }
+                Button("Save") { save() }.keyboardShortcut(.defaultAction)
+            }
+            .padding(12)
+        }
+        .frame(height: 680)
+        .onAppear {
+            guard !loaded else { return }
+            loaded = true
+            defaults = ConnectionOptions(resolved: app.accounts.defaults)
+            clientID = app.accounts.library.pcloudClientID
+            clientSecret = CredentialStore.pcloudClientSecret ?? ""
+        }
+    }
+
+    private func save() {
+        do {
+            try app.accounts.saveDefaults(defaults.resolved(defaults: .standard))
+            try app.accounts.savePCloudClient(id: clientID, secret: clientSecret)
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 }

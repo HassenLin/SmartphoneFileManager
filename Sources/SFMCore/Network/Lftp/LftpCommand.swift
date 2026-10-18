@@ -154,3 +154,8 @@ public enum SFTPHostKeys {
         try? FileManager.default.removeItem(atPath: file.path + ".old")
     }
 }
+
+public extension ConnectionOptions {
+    /// 「額外 lftp 設定」中會被忽略的行（只接受 `set …`），選項視窗顯示警告用
+    static func rejectedLftpLines(_ text: String) -> [String] { LftpCommand.rejectedExtraLines(text) }
+}

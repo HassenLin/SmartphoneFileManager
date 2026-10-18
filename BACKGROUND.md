@@ -25,3 +25,16 @@
 | iPhone | libimobiledevice `afcclient`（每操作一個行程） | macOS 無公開 API；afcclient 錯誤時結束碼仍為 0、rm 不遞迴、無 copy、互動模式讀 EOF 不結束——皆已在實作中處理並記錄 |
 | Mac 刪除 | 移到垃圾桶 | 可復原 |
 | 等待子行程 | `terminationHandler` + semaphore，不用 `waitUntilExit()` | 後者輪詢目前執行緒的 run loop，實測在測試宿主中永遠等不到而卡死 |
+| 網路來源識別 | `SourceID.Kind.network`＋帳號 id，協定在帳號設定 | 新增協定不動 Kind 與各處 switch；書籤、同步、佇列以 SourceID 運作，免改 |
+| 協定 → 實作 | 只在 `NetworkSourceFactory` | App 層只拿到 `any FileSource`，不認識各協定型別（減法彈性：拿掉一個協定只改工廠與編輯器） |
+| FTP／FTPS／SFTP | lftp 子行程（每操作一個行程），不自寫協定 | 一個工具涵蓋主動／被動、FTPS explicit／implicit、SFTP 密碼／金鑰、續傳與檔名編碼；自寫 FTP 資料通道與 TLS session reuse 成本高。代價：每次操作重新登入（約 0.1～1 秒） |
+| FTPS 的 TLS 版本 | 以 `OPENSSL_CONF` 限制 lftp 為 TLS 1.2，上傳後驗證大小 | 實測 lftp 4.9.3＋OpenSSL 3 在 TLS 1.3 資料通道上傳會截斷檔尾且回報成功（Python ftplib TLS 1.3 正常 → lftp 端問題）；Homebrew lftp 連結 OpenSSL，`ssl:priority` 無效 |
+| lftp 的重試 | 一律依帳號選項覆寫 `net:max-retries`、`net:timeout` | lftp 預設重試 1000 次、逾時 5 分鐘，連不上時窗格會像當掉 |
+| 密碼傳遞 | `open --env-password`（環境變數 `LFTP_PASSWORD`） | 不出現在行程參數（`ps`）與 log |
+| 額外 lftp 設定 | 只接受 `set …` 行 | 自由文字若可為任意 lftp 指令（`!shell`）風險過高 |
+| SFTP 主機金鑰 | app 專用 known_hosts、首次自動記住（accept-new） | 不動 `~/.ssh/known_hosts`；變更時拒絕連線，選項視窗可「忘記」。ssh 會把 UserKnownHostsFile 的值以空白切開，路徑需再包雙引號 |
+| WebDAV | 移植 nas_webdav 的用戶端（改 async、加進度與 Range 續傳） | 同一作者已驗證的 multistatus 解析、憑證釘選、部分寫入探測；探測只用隱藏探測檔，不拿真檔案試 |
+| 明文連線 | 允許（http、純 FTP），帳號清單與窗格標示「未加密」 | 區網 NAS／路由器常只有純 FTP；由使用者決定 |
+| pCloud 登入 | OAuth2 code flow＋127.0.0.1 loopback、使用者自備 App | 不存使用者密碼；歐洲帳號必須打 `eapi.pcloud.com`——以回呼的 `hostname`／`locationid` 決定地區並換 token，hostname 只接受兩個官方 host（不把 client secret 送到別處） |
+| pCloud 上傳續傳 | 不支援（整份重傳） | `uploadfile` 不能指定位置；可日後改 upload_create／upload_write |
+| 帳號選項 | 每欄 Optional＝沿用全域預設，`resolved(defaults:)` 產生具體值 | FileSource 不讀 UserDefaults，core 可測試；全域預設與帳號選項共用同一個表單 |

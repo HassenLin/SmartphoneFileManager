@@ -1,6 +1,6 @@
 # Smartphone File Manager（macOS）
 
-在 Mac 上同時管理 **Mac、Android、iPhone** 檔案的雙窗格檔案管理器，以 **Swift 6 + SwiftUI** 撰寫。
+在 Mac 上同時管理 **Mac、Android、iPhone 與網路伺服器**（WebDAV、FTP／FTPS、SFTP、pCloud）檔案的雙窗格檔案管理器，以 **Swift 6 + SwiftUI** 撰寫。
 源自 [wkbin/AdbFileManager](https://github.com/wkbin/AdbFileManager)（Kotlin/Compose）的 macOS 移植，
 並擴充為任意來源 ⇄ 任意來源。結構：SwiftPM 套件 + `tools/make-app.sh`。
 
@@ -11,6 +11,8 @@
   根目錄列出各儲存空間（內部、SD 卡）；同儲存空間移動與小檔複製由裝置端完成，大檔／資料夾經 Mac 中繼（MTP 裝置端複製無進度且會逾時）
 - **iPhone**：USB 或 **Wi-Fi**（先以 USB 接一次、在 Finder 開啟「在 Wi-Fi 上時顯示此 iPhone」，之後同網路即可；USB 與 Wi-Fi 同時存在時用 USB）。透過 libimobiledevice（`brew install libimobiledevice ideviceinstaller`）。根目錄分兩個虛擬資料夾：
   `Media`（DCIM、Downloads、Books…）與 `Apps`（開啟檔案分享的 App 及其 Documents，等同 Finder 的「檔案」分頁）
+- **網路帳號**：WebDAV（https／http、自簽憑證可釘選）、FTP（純 FTP／FTPS explicit／FTPS implicit；被動／主動）、SFTP（密碼或私鑰）、
+  pCloud（OAuth2，美國／歐洲資料中心）。FTP／FTPS／SFTP 需 `brew install lftp`；pCloud 需自行在 pCloud 註冊 App（設定 → 網路）
 - **發佈**：自用、ad-hoc 簽章、App Sandbox 關閉；**語系**：English／繁體中文／简体中文（跟隨系統語言）
 - **安裝導引**：缺 adb、libimobiledevice、scrcpy 時於 app 內顯示步驟、官方下載連結與一鍵安裝指令（輔助說明 → 安裝導引）
 
@@ -44,7 +46,7 @@
 
 | 區塊 | 說明 |
 |---|---|
-| 雙窗格、任意來源 | **左右窗格各自**以標題的來源按鈕選擇：這台 Mac、任一 Android、任一 iPhone；同一台裝置可在兩邊同時開不同資料夾。來源與各來源最後所在資料夾都會記住，下次啟動恢復（裝置未連線時等它連上；資料夾已不存在則回起始資料夾） |
+| 雙窗格、任意來源 | **左右窗格各自**以標題的來源按鈕選擇：這台 Mac、任一 Android、任一 iPhone、任一網路帳號；同一台裝置可在兩邊同時開不同資料夾。來源與各來源最後所在資料夾都會記住，下次啟動恢復（裝置未連線時等它連上；資料夾已不存在則回起始資料夾） |
 | 拷貝／剪下／貼上 | 表格焦點時 ⌘C／⌘X／⌘V；右鍵「拷貝、剪下、貼上、貼到「資料夾」」；對單檔、資料夾、多選都適用。Finder 拷貝的檔案可直接貼到裝置；Mac 項目拷貝後可貼到 Finder |
 | 刪除 | Delete 鍵或右鍵；Mac 為移到垃圾桶，裝置為永久刪除（含資料夾內容），皆會確認 |
 | 窗格互傳 | 右鍵「複製／移動到另一窗格」、拖放（窗格 ⇄ 窗格、Finder → 窗格、Mac 窗格 → Finder；裝置檔案存到 Mac 用「匯出」或拖到 Mac 窗格）；同 Finder：同一來源拖放為移動（原生 mv），按住 Option 為拷貝，不同來源及 Finder 拖入為拷貝 |
@@ -57,6 +59,8 @@
 | iPhone 工具 | 工具列「iPhone」按鈕彈出視窗：選擇目標 iPhone；裝置資訊（機型、iOS、電池、儲存空間）、重新開機／關機、App 管理（列出、安裝 .ipa、解除安裝）。iOS 17 起 libimobiledevice 無法截圖，故不提供 |
 | 書籤（兩種） | 窗格的書籤選單：**資料夾書籤**（任何來源，含裝置）與**同步專案**（左右一對資料夾＋方向＋選項）；只列窗格目前裝置的項目（同步專案：任一邊在此裝置），其他裝置的收在「其他裝置」子選單；選同步專案會把左右窗格開到該資料夾並開啟同步視窗。存於 `Application Support/SmartphoneFileManager/bookmarks.json`，首次啟動匯入舊版 `~/.adbfilemanager/bookmarks.json` |
 | 同步（類似 rsync） | 工具列「同步」：彈出視窗含專案名稱、方向（左 → 右／左 ← 右／左 ↔ 右 雙向）、選項與「取消／儲存／同步」；同步時若選項有變先儲存再執行（加入工作佇列，可暫停／繼續）。**兩邊都是 Mac** 直接執行 rsync（`-a`＋檢查碼、延伸屬性、額外參數）；其他組合用內建引擎，提供來源做得到的選項：刪除多餘、隱藏檔、排除樣式、只比大小、略過已存在。雙向：各以較新的檔案為準、不刪除（Mac ↔ Mac 為兩趟 `rsync -a --update`） |
+| 網路帳號 | 「檔案 → 網路帳號…」（⌥⌘K）或來源選單：**帳號清單**（名稱／協定／伺服器／帳號／密碼遮罩可顯示／安全性／使用中；新增、複製、刪除、上移下移＝來源選單順序、在左／右窗格開啟）、**帳號設定**（主機、埠、加密、主動／被動、SFTP 私鑰、pCloud 地區與登入、起始資料夾、測試連線、憑證不受信任時一鍵釘選）、**選項視窗**（逾時、重試、連線數、閒置、檔名編碼如 Big5、伺服器時區、主動模式外部 IP／埠範圍、驗證憑證、TLS 最低版本、WebDAV 續傳方式、額外 lftp 設定；每項可覆寫或沿用 設定 → 網路 的全域預設）。密碼與 token 存登入鑰匙圈；未加密連線顯示警告 |
+| 網路傳輸 | 與裝置相同走工作佇列（衝突、續傳、同步、書籤）。續傳：WebDAV 下載 Range、上傳需伺服器支援部分寫入（自動探測）；FTP／SFTP `get -c`／`put -c`；pCloud 下載 Range、上傳整份重傳。同來源移動／複製：WebDAV MOVE／COPY、pCloud 伺服器端、FTP／SFTP 只能改名（複製經 Mac 中繼） |
 | Mac 位置 | Mac 窗格的雲朵按鈕：常用資料夾、iCloud 雲碟、Google Drive／OneDrive／Dropbox 等（`~/Library/CloudStorage`）、外接磁碟 |
 
 ## 安裝（另一台 Mac）
@@ -74,6 +78,8 @@ git clone <repo> SmartphoneFileManager && cd SmartphoneFileManager
 swift test                                            # 單元測試（64 項，含預設略過的實機測試）
 SFM_LIVE=1 swift test --filter LiveDevice             # 實機整合測試（需 Android + iPhone）
 SFM_LIVE=1 swift test --filter MTPLive                # MTP 實機測試（需 MTP 裝置）
+SFM_LIVE_NET="ftp://u:p@host:21 ftpes://… ftps://… sftp://… https://u:p@nas:5006/home" \
+  swift test --filter NetworkLive                     # 網路實機測試（scheme 說明見 NetworkLiveTests.swift）
 ./tools/make-app.sh && open .build/SmartphoneFileManager.app
 open Package.swift                                    # Xcode 開發／除錯
 ```
@@ -86,6 +92,9 @@ Sources/CLibMTP/              L0：libmtp 標頭的 C 模組（弱連結）
 Sources/SFMCore/              L1：零 UI 相依，可 swift test
   Process/ProcessRunner       子行程唯一入口（可取消、逾時、串流、不經 shell、不依賴 run loop）
   Adb/                        AdbClient/DeviceConnection、AdbLocator、ShellText 跳脫、Tokenizer
+  Network/                    網路來源：NetworkAccount（帳號＋ConnectionOptions）、帳號庫 accounts.json、CredentialStore（鑰匙圈）、
+                              NetworkSourceFactory（協定 → 實作的唯一對應）、WebDAV/（移植自 nas_webdav）、
+                              Lftp/（FTP／FTPS／SFTP，lftp 子行程）、PCloud/（REST、OAuth2 loopback）
   Sources/                    FileSource 抽象（含續傳介面 ResumableTransfer）+ Mac／Android／iPhone／MTP 實作；
                               MacLocations（Mac 位置捷徑：雲端硬碟、磁碟）
   MTP/                        MTPSession（每台裝置一條序列佇列）、MTPDeviceManager（偵測／開啟／釋放）
@@ -101,6 +110,7 @@ Sources/SmartphoneFileManager/ L4：SwiftUI app
   Browser/                    BrowserModel（窗格狀態，左右共用）、BrowserPaneView、對話框
   Main/                       MainWindowView、DeviceToolsPopover（工具列 Android／iPhone 工具彈出視窗）、SyncPopover（同步視窗）
   IPhone/                     IPhoneInfoView、IPhoneAppsView（iPhone 工具面板）
+  Network/                    AccountListWindow（帳號清單視窗）、AccountEditorView（帳號設定）、AccountOptionsView（選項視窗／全域預設表單）
   Setup/                      SetupGuideView（安裝導引）
 Tests/SFMCoreTests/           Swift Testing（含 FakeSource 引擎測試、實機測試）
 docs/                         README 截圖（docs/screenshots，敏感資料已打馬賽克）
@@ -111,7 +121,11 @@ tools/                        install.sh、make-app.sh、make-icon.swift、AppIc
 
 ## 狀態
 
-- `swift build` 零警告；`swift test` 64/64；實機整合測試（Palma Android + iPhone iOS 27）通過。
+- `swift build` 零警告；`swift test` 92/92；實機整合測試（Palma Android + iPhone iOS 27）通過。
+- 網路實機測試（本機測試伺服器）通過：FTP 被動／主動、FTPS explicit／implicit、SFTP、WebDAV（http）——列表、上傳、下載、
+  續傳上傳／下載、改名、資料夾上傳／下載、刪除、錯誤密碼。帳號清單與設定畫面已截圖確認。
+- **待驗收**：Synology WebDAV（https＋釘選憑證）實機、pCloud 美國／歐洲帳號 OAuth 登入（需自行註冊 pCloud App）、
+  網路帳號的 UI 端到端操作（新增帳號 → 開在窗格 → 拖放傳輸）。
 - 已截圖確認：左 iPhone／右 Android 雙窗格瀏覽。
 - 待手動驗收：UI 上的 ⌘C/⌘X/⌘V、拖放。
 
