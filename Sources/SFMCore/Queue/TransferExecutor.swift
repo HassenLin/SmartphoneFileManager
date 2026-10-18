@@ -1,5 +1,20 @@
 import Foundation
 
+/// 主執行器與子執行器的名額（同一工作共用；佇列依同時傳輸數建立）
+struct ExecutorLanes: Sendable {
+    /// 主執行器：一次一個大檔，下載可用多條連線
+    let main: TransferSlots
+    /// 子執行器：小檔，同時傳輸數 − 1 個，各一條連線
+    let sub: TransferSlots
+
+    /// 同時傳輸數 < 2 時為 nil（逐檔，唯一的執行器即主執行器）
+    init?(parallelTransfers: Int) {
+        guard parallelTransfers >= 2 else { return nil }
+        main = TransferSlots(1)
+        sub = TransferSlots(parallelTransfers - 1)
+    }
+}
+
 /// 執行器回報給佇列的節點事件（佇列在主執行緒套用並保存）。
 /// 以 `await` 回報、套用完才繼續，確保佇列判定工作結束時所有事件都已套用；
 /// 高頻的進度另走不等待、會合併的 `progress` 閉包。
@@ -16,6 +31,10 @@ enum NodeEvent: Sendable {
 ///
 /// 取消（暫停／停止／關閉 app）：正在傳的檔案標為 `partial` 並保留不完整內容，再往上拋 `CancellationError`；
 /// 停止時由佇列負責清除這些不完整內容。其他錯誤只讓該節點失敗，繼續處理其餘節點。
+///
+/// **主執行器／子執行器**（網路帳號「同時傳輸數」≥ 2 時，見 `ExecutorLanes`）：遍歷樹時依檔案大小分流——
+/// 達到大檔門檻的交給**主執行器**（一次一個，下載可用多條連線）、其餘交給**子執行器**（同時傳輸數 − 1 個，各一條連線）。
+/// 只有主執行器會多連線。逐檔（同時傳輸數 1）時唯一的那個就是主執行器：大檔一樣多連線、小檔單一連線。
 struct TransferExecutor: Sendable {
     let jobID: UUID
     let source: any FileSource
@@ -33,15 +52,25 @@ struct TransferExecutor: Sendable {
     var twoWay = false
     /// 本執行器是否為反方向節點而對調了來源／目的（避免反方向節點再次對調）
     var isSwapped = false
-    /// 並行傳輸名額（nil＝逐檔）。網路帳號選項「同時傳輸數」大於 1 時由佇列建立，整個工作共用
-    var slots: TransferSlots? = nil
+    /// 主／子執行器的名額（nil＝逐檔）。同時傳輸數 ≥ 2 時由佇列建立，整個工作共用
+    var lanes: ExecutorLanes? = nil
+
+    /// 大檔門檻：涉及的非 Mac 來源中最小者（Mac 與裝置沒有門檻 → 不分大小檔）
+    private var largeThreshold: Int64? {
+        [source, destination].compactMap { $0 }.filter { $0.id.kind != .mac }.compactMap(\.largeFileThreshold).min()
+    }
+
+    private func isLarge(_ node: TransferNode) -> Bool {
+        guard let largeThreshold else { return false }
+        return node.size >= largeThreshold
+    }
 
     /// 反方向節點（雙向同步）用的執行器：來源與目的對調，其餘相同
     private var swapped: TransferExecutor? {
         guard let destination else { return nil }
         return TransferExecutor(jobID: jobID, source: destination, destination: source, staging: staging,
                                 report: report, progress: progress, ask: ask, options: options, twoWay: twoWay, isSwapped: true,
-                                slots: slots)
+                                lanes: lanes)
     }
 
     func run(_ nodes: [TransferNode]) async throws {
@@ -50,10 +79,12 @@ struct TransferExecutor: Sendable {
 
     /// 執行同一層的節點，回傳是否全部完成（`.done`；略過也算未完成，移動時父資料夾據此保留來源）。
     ///
-    /// 有並行名額時，單檔傳輸取得名額後在背景傳，遍歷繼續往下；其他節點（資料夾、刪除、改名…）依序在這裡執行，
-    /// 子層的檔案同樣向共用名額排隊。本層結束前等所有背景檔案完成，父資料夾才判斷能否刪除來源。
+    /// 逐檔時依序執行。有主／子執行器時，檔案依大小分流後在背景傳，遍歷繼續往下；其他節點（資料夾、刪除、改名…）
+    /// 依序在這裡執行，子層的檔案同樣向共用名額排隊。本層結束前等所有背景檔案完成，父資料夾才判斷能否刪除來源。
+    /// - 小檔：先取得子執行器名額才建立工作（遍歷在這裡等，背景工作數量有上限）。
+    /// - 大檔：立即建立工作、在工作內等主執行器——大檔排隊時不擋住後面的小檔。
     private func runLevel(_ nodes: [TransferNode]) async throws -> Bool {
-        guard let slots else {
+        guard let lanes else {
             var allDone = true
             for node in nodes {
                 try Task.checkCancellation()
@@ -67,16 +98,11 @@ struct TransferExecutor: Sendable {
                 try Task.checkCancellation()
                 let finished = node.state == .done || node.state == .skipped
                 if node.operation == .transferFile && !finished {
-                    try await slots.acquire()
-                    group.addTask {
-                        do {
-                            let state = try await runNode(node)
-                            await slots.release()
-                            return state
-                        } catch {
-                            await slots.release()
-                            throw error
-                        }
+                    if isLarge(node) {
+                        group.addTask { try await lanes.main.run { try await runNode(node) } }
+                    } else {
+                        try await lanes.sub.acquire()
+                        group.addTask { try await lanes.sub.runAcquired { try await runNode(node) } }
                     }
                 } else if try await runNode(node) != .done {
                     allDone = false
@@ -202,9 +228,11 @@ struct TransferExecutor: Sendable {
         let progress: @Sendable (Double) -> Void = { [sink = self.progress, id = node.id] fraction in
             sink(id, Int64(Double(size) * min(1, max(0, fraction))))
         }
+        // 大檔由主執行器處理：下載可用多條連線；小檔（子執行器）一律單一連線
+        let connections = isLarge(node) ? source.largeFileConnections : 1
         do {
             try await copyFile(node.sourcePath, to: target, size: size, destination: destination,
-                               stagingKey: node.id.uuidString, progress: progress)
+                               stagingKey: node.id.uuidString, connections: connections, progress: progress)
         } catch is CancellationError {
             await report(.state(node.id, .partial))
             throw CancellationError()
@@ -216,19 +244,21 @@ struct TransferExecutor: Sendable {
 
     /// 依來源組合選擇單檔傳輸路徑
     private func copyFile(_ path: String, to target: String, size: Int64, destination: any FileSource,
-                          stagingKey: String, progress: @escaping @Sendable (Double) -> Void) async throws {
+                          stagingKey: String, connections: Int,
+                          progress: @escaping @Sendable (Double) -> Void) async throws {
         if source.id == destination.id, source.capabilities.nativeCopy {
             try await source.resumeCopy(path, to: target, totalSize: size, onProgress: progress)
         } else if source.id.kind == .mac {
             try await destination.resumeUpload(URL(fileURLWithPath: path), to: target, onProgress: progress)
         } else if destination.id.kind == .mac {
-            try await source.resumeDownload(path, to: URL(fileURLWithPath: target), totalSize: size, onProgress: progress)
+            try await source.resumeDownload(path, to: URL(fileURLWithPath: target), totalSize: size,
+                                            connections: connections, onProgress: progress)
         } else {
             // 經 Mac 中繼：暫存檔以節點 ID 命名（隨佇列保存、跨啟動不變；不可用 hashValue，每次啟動不同），
             // 保存在工作的暫存資料夾，中斷後下載與上傳兩段都能續傳
             try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
             let local = staging.appendingPathComponent(stagingKey)
-            try await source.resumeDownload(path, to: local, totalSize: size) { progress($0 * 0.5) }
+            try await source.resumeDownload(path, to: local, totalSize: size, connections: connections) { progress($0 * 0.5) }
             try await destination.resumeUpload(local, to: target) { progress(0.5 + $0 * 0.5) }
             try? FileManager.default.removeItem(at: local)
         }

@@ -54,7 +54,9 @@ public struct MacFileSource: FileSource {
         try fm.trashItem(at: URL(fileURLWithPath: path), resultingItemURL: nil)
     }
 
+    /// 也清掉多連線下載留下的輔助檔（分區塊狀態檔、lftp pget 狀態檔），否則停止後會殘留隱藏檔
     public func discard(_ path: String) async throws {
+        for sidecar in PartialDownloadFiles.sidecars(of: URL(fileURLWithPath: path)) { try? fm.removeItem(at: sidecar) }
         try fm.removeItem(atPath: path)
     }
 

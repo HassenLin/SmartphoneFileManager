@@ -309,3 +309,81 @@ struct WebDAVTests {
         #expect(WebDAVClient.httpError(412, what: "MOVE /a") == .alreadyExists("MOVE /a"))
     }
 }
+
+/// 大檔多連線下載：分區塊、續傳、從單一連線部分檔接續；lftp pget 狀態檔；相關選項
+@Suite("Segmented download")
+struct SegmentedDownloadTests {
+    let block = Int(SegmentedDownload.blockSize)
+
+    private func temp() -> URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent("sfm-seg-\(UUID().uuidString).bin")
+    }
+
+    /// 記錄被抓的區塊起點
+    final class Fetched: @unchecked Sendable {
+        let lock = NSLock()
+        var starts: [Int64] = []
+        func add(_ start: Int64) { lock.withLock { starts.append(start) } }
+    }
+
+    @Test func downloadsAllBlocksInParallelAndCleansState() async throws {
+        let content = Data((0..<(block * 2 + 1234)).map { UInt8(truncatingIfNeeded: $0 &* 31) })
+        let url = temp()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let fetched = Fetched()
+        try await SegmentedDownload.run(to: url, totalSize: Int64(content.count), connections: 3, onProgress: { _ in }) { range in
+            fetched.add(range.lowerBound)
+            return content.subdata(in: Int(range.lowerBound)..<Int(range.upperBound) + 1)
+        }
+        #expect(try Data(contentsOf: url) == content)
+        #expect(fetched.starts.sorted() == [0, Int64(block), Int64(block * 2)])
+        #expect(!SegmentedDownload.hasState(url))   // 完成即刪狀態檔
+    }
+
+    @Test func resumesOnlyMissingBlocks() async throws {
+        let content = Data((0..<(block * 3)).map { UInt8(truncatingIfNeeded: $0 &* 7) })
+        let url = temp()
+        defer { try? FileManager.default.removeItem(at: url); try? FileManager.default.removeItem(at: SegmentedDownload.stateURL(for: url)) }
+        // 第一次：第 2 塊失敗（模擬中斷）→ 狀態檔保留已完成的區塊
+        await #expect(throws: (any Error).self) {
+            try await SegmentedDownload.run(to: url, totalSize: Int64(content.count), connections: 1, onProgress: { _ in }) { range in
+                if range.lowerBound == Int64(block) { throw CancellationError() }
+                return content.subdata(in: Int(range.lowerBound)..<Int(range.upperBound) + 1)
+            }
+        }
+        #expect(SegmentedDownload.hasState(url))
+        let fetched = Fetched()
+        try await SegmentedDownload.run(to: url, totalSize: Int64(content.count), connections: 2, onProgress: { _ in }) { range in
+            fetched.add(range.lowerBound)
+            return content.subdata(in: Int(range.lowerBound)..<Int(range.upperBound) + 1)
+        }
+        #expect(!fetched.starts.contains(0))          // 第 0 塊上次已完成，不重抓
+        #expect(try Data(contentsOf: url) == content)
+    }
+
+    @Test func continuesFromSingleConnectionPrefix() {
+        let url = temp()
+        defer { try? FileManager.default.removeItem(at: url) }
+        FileManager.default.createFile(atPath: url.path, contents: Data(count: block + 100))
+        // 單一連線留下 1 塊多的前段 → 第 0 塊視為完成，第 1 塊（不完整）重抓
+        let state = SegmentedDownload.loadState(url, size: Int64(block * 3))
+        #expect(state.done == [0])
+    }
+
+    @Test func parsesPgetStatus() {
+        let text = "size=300\n0.pos=50\n0.limit=100\n1.pos=130\n1.limit=200\n2.pos=200\n2.limit=300\n"
+        // 段 0：0→50＝50；段 1：100→130＝30；段 2：200→200＝0
+        #expect(FTPFileSource.pgetDownloaded(text) == 80)
+        #expect(FTPFileSource.pgetDownloaded("garbage") == nil)
+    }
+
+    @Test func optionsForLargeFiles() {
+        var options = ConnectionOptions.Resolved()
+        options.parallelTransfers = 3
+        options.maxConnections = 4
+        options.largeFileThresholdMB = 200
+        #expect(options.largeFileThreshold == 200 << 20)
+        #expect(options.connectionPoolSize == 6)        // 子執行器 2 ＋ 主執行器 4 條
+        #expect(ExecutorLanes(parallelTransfers: 1) == nil)
+    }
+}

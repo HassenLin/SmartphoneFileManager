@@ -28,16 +28,25 @@ struct ConnectionOptionsForm: View {
                           overridable: defaults != nil) { Stepper("\($0.wrappedValue)", value: $0, in: 0...10) }
                 OptionRow("Retry delay (seconds)", value: $options.retryDelaySeconds, fallback: resolvedDefaults.retryDelaySeconds,
                           overridable: defaults != nil) { Stepper("\($0.wrappedValue)", value: $0, in: 1...120) }
-                OptionRow("Max connections", value: $options.maxConnections, fallback: resolvedDefaults.maxConnections,
-                          overridable: defaults != nil) { Stepper("\($0.wrappedValue)", value: $0, in: 1...16) }
-                OptionRow("Simultaneous transfers", value: $options.parallelTransfers, fallback: resolvedDefaults.parallelTransfers,
-                          overridable: defaults != nil) { Stepper("\($0.wrappedValue)", value: $0, in: 1...8) }
-                Text("How many files the task queue uploads or downloads at once for this account. With a phone on the other side, transfers stay one at a time. FTP servers often limit connections per IP.")
-                    .font(.caption).foregroundStyle(.secondary)
                 if shows(.ftp, .sftp) {
                     OptionRow("Disconnect when idle (seconds)", value: $options.idleSeconds, fallback: resolvedDefaults.idleSeconds,
                               overridable: defaults != nil) { Stepper("\($0.wrappedValue)", value: $0, in: 10...3600, step: 10) }
                 }
+            }
+            Section {
+                OptionRow("Simultaneous transfers", value: $options.parallelTransfers, fallback: resolvedDefaults.parallelTransfers,
+                          overridable: defaults != nil) { Stepper("\($0.wrappedValue)", value: $0, in: 1...8) }
+                OptionRow("Large file size (MB)", value: $options.largeFileThresholdMB,
+                          fallback: resolvedDefaults.largeFileThresholdMB, overridable: defaults != nil) {
+                    Stepper("\($0.wrappedValue)", value: $0, in: 10...10_000, step: 50)
+                }
+                OptionRow("Connections per large file", value: $options.maxConnections, fallback: resolvedDefaults.maxConnections,
+                          overridable: defaults != nil) { Stepper("\($0.wrappedValue)", value: $0, in: 1...16) }
+            } header: {
+                Text("Parallel Transfers")
+            } footer: {
+                Text("With 2 or more simultaneous transfers, one slot (the main executor) is kept for large files and downloads them over several connections; the other slots move small files one connection each. With 1, files go one at a time and large downloads still use several connections. Uploads always use one connection per file. With a phone on the other side, transfers stay one at a time. FTP servers often limit connections per IP.")
+                    .font(.caption)
             }
             if shows(.ftp, .sftp) {
                 Section("Transfer") {

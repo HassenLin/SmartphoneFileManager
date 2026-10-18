@@ -24,6 +24,8 @@ public struct FTPFileSource: FileSource {
     /// 找 lftp（PATH + Homebrew）；未安裝時為 nil
     /// 每個傳輸是獨立的 lftp 行程，並行即多條 FTP／SFTP 連線（注意伺服器的每 IP 連線數上限）
     public var maxParallelTransfers: Int { max(1, command.options.parallelTransfers) }
+    public var largeFileThreshold: Int64? { command.options.largeFileThreshold }
+    public var largeFileConnections: Int { max(1, command.options.maxConnections) }
 
     public static func locateTool() -> String? { AdbLocator.findExecutable("lftp") }
 
@@ -156,15 +158,53 @@ public struct FTPFileSource: FileSource {
         try await putFile(localURL, to: path, resume: false, onProgress: onProgress)
     }
 
-    /// 進度：lftp 在非 TTY 不輸出進度，輪詢本機檔案大小（便宜，0.3 秒一次）
-    private func getFile(_ path: String, to localURL: URL, resume: Bool, total: Int64,
+    /// 進度：lftp 在非 TTY 不輸出進度，輪詢本機檔案大小（便宜，0.3 秒一次）。
+    ///
+    /// 主執行器的大檔（`connections > 1`）改用 `pget -n`：多條連線各下載一段、直接寫到檔案中的位置，
+    /// 檔案大小一開始就接近完整，不能拿來算進度 → 改讀 lftp 的狀態檔（`名稱.lftp-pget-status`，見 `pgetDownloaded`）。
+    /// 狀態檔存在＝pget 尚未完成，續傳時一律再用 `pget -c`（它靠狀態檔接續各段）。
+    private func getFile(_ path: String, to localURL: URL, resume: Bool, total: Int64, connections: Int = 1,
                          onProgress: @escaping @Sendable (Double) -> Void) async throws {
         let localPath = localURL.path
+        let status = URL(fileURLWithPath: localPath + ".lftp-pget-status")
+        let usePget = connections > 1 || FileManager.default.fileExists(atPath: status.path)
+        let lastKnown = LastValue()
         try await NetworkTransfer.withPolling(total: total, interval: .milliseconds(300), onProgress: onProgress, size: {
-            NetworkTransfer.localSize(URL(fileURLWithPath: localPath))
+            guard usePget else { return NetworkTransfer.localSize(URL(fileURLWithPath: localPath)) }
+            // 狀態檔每隔幾秒才寫一次，讀不到時沿用上次的值（不讓進度倒退）
+            if let text = try? String(contentsOf: status, encoding: .utf8), let done = Self.pgetDownloaded(text) {
+                await lastKnown.set(done)
+            }
+            return await lastKnown.value
         }) { [self] in
-            try await runTransfer([(resume ? "get -c " : "get ") + Self.q(path) + " -o " + Self.q(localPath)])
+            let get = usePget ? "pget -c -n \(max(1, connections)) " : (resume ? "get -c " : "get ")
+            try await runTransfer([get + Self.q(path) + " -o " + Self.q(localPath)])
         }
+    }
+
+    /// pget 狀態檔 → 已下載位元組。格式（每段一組，段 i 從前一段的 limit 開始）：
+    ///
+    ///     size=314572800
+    ///     0.pos=1048576
+    ///     0.limit=78643200
+    ///     1.pos=79691776
+    ///     1.limit=157286400
+    static func pgetDownloaded(_ text: String) -> Int64? {
+        var values: [String: Int64] = [:]
+        for line in text.split(whereSeparator: \.isNewline) {
+            let parts = line.split(separator: "=", maxSplits: 1)
+            if parts.count == 2, let value = Int64(parts[1].trimmingCharacters(in: .whitespaces)) {
+                values[String(parts[0])] = value
+            }
+        }
+        guard values["size"] != nil else { return nil }
+        var done: Int64 = 0, start: Int64 = 0, index = 0
+        while let pos = values["\(index).pos"], let limit = values["\(index).limit"] {
+            done += max(0, pos - start)
+            start = limit
+            index += 1
+        }
+        return index > 0 ? done : nil
     }
 
     /// 進度：輪詢遠端大小——每次輪詢都是一次新登入，所以 2 秒一次
@@ -187,12 +227,24 @@ public struct FTPFileSource: FileSource {
 
     public func resumeDownload(_ path: String, to localURL: URL, totalSize: Int64,
                                onProgress: @escaping @Sendable (Double) -> Void) async throws {
+        try await resumeDownload(path, to: localURL, totalSize: totalSize, connections: 1, onProgress: onProgress)
+    }
+
+    /// `connections > 1`（主執行器的大檔）：`pget -c -n`
+    public func resumeDownload(_ path: String, to localURL: URL, totalSize: Int64, connections: Int,
+                               onProgress: @escaping @Sendable (Double) -> Void) async throws {
         if NetworkTransfer.localSize(localURL) > totalSize { try? FileManager.default.removeItem(at: localURL) }
-        try await getFile(path, to: localURL, resume: true, total: totalSize, onProgress: onProgress)
+        try await getFile(path, to: localURL, resume: true, total: totalSize, connections: connections, onProgress: onProgress)
     }
 
     public func resumeUpload(_ localURL: URL, to path: String, onProgress: @escaping @Sendable (Double) -> Void) async throws {
         if let remote = try await stat(path)?.size, remote > NetworkTransfer.localSize(localURL) { try await discard(path) }
         try await putFile(localURL, to: path, resume: true, onProgress: onProgress)
     }
+}
+
+/// 輪詢間保留最後一次讀到的值
+private actor LastValue {
+    private(set) var value: Int64 = 0
+    func set(_ newValue: Int64) { value = max(value, newValue) }
 }

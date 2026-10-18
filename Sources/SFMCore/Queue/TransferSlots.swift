@@ -40,6 +40,24 @@ actor TransferSlots {
         }
     }
 
+    /// 等到名額後執行 `work`，結束（含拋錯）時歸還
+    nonisolated func run<T: Sendable>(_ work: @Sendable () async throws -> T) async throws -> T {
+        try await acquire()
+        return try await runAcquired(work)
+    }
+
+    /// 已先取得名額時執行 `work`，結束（含拋錯）時歸還
+    nonisolated func runAcquired<T: Sendable>(_ work: @Sendable () async throws -> T) async throws -> T {
+        do {
+            let result = try await work()
+            await release()
+            return result
+        } catch {
+            await release()
+            throw error
+        }
+    }
+
     private func cancel(_ id: UUID) {
         guard let index = waiters.firstIndex(where: { $0.id == id }) else { return }
         waiters.remove(at: index).continuation.resume(throwing: CancellationError())

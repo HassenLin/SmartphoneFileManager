@@ -154,12 +154,7 @@ final class PCloudClient: @unchecked Sendable {
     /// 下載：`getfilelink` 取得 CDN 連結（host 依該次回應，兩區不同）後 GET；`offset > 0` 以 Range 接續附加
     func download(_ path: String, to localURL: URL, offset: Int64, totalSize: Int64?,
                   onProgress: @escaping @Sendable (Double) -> Void) async throws {
-        let link = try await call("getfilelink", ["path": path, "forcedownload": "1"])
-        guard let host = link.hosts?.first, let linkPath = link.path,
-              let url = URL(string: "https://\(host)\(linkPath)") else {
-            throw NetworkError.server("pCloud getfilelink: no download link")
-        }
-        var req = URLRequest(url: url)
+        var req = URLRequest(url: try await downloadLink(path))
         if offset > 0 { req.setValue("bytes=\(offset)-", forHTTPHeaderField: "Range") }
         let progress = TransferProgressDelegate { written, expected in
             let total = totalSize ?? (expected > 0 ? offset + expected : 0)
@@ -187,6 +182,32 @@ final class PCloudClient: @unchecked Sendable {
             try fm.moveItem(at: temporary, to: localURL)
         }
         onProgress(1)
+    }
+
+    /// 下載連結（CDN host 依該次回應，兩區不同；連結有效數小時，一次下載內共用）
+    func downloadLink(_ path: String) async throws -> URL {
+        let link = try await call("getfilelink", ["path": path, "forcedownload": "1"])
+        guard let host = link.hosts?.first, let linkPath = link.path,
+              let url = URL(string: "https://\(host)\(linkPath)") else {
+            throw NetworkError.server("pCloud getfilelink: no download link")
+        }
+        return url
+    }
+
+    /// 取回下載連結上的一個區塊（多連線下載用）；CDN 支援 Range，必須回 206
+    func fetchRange(_ link: URL, _ range: ClosedRange<Int64>) async throws -> Data {
+        var req = URLRequest(url: link)
+        req.setValue("bytes=\(range.lowerBound)-\(range.upperBound)", forHTTPHeaderField: "Range")
+        let data: Data, response: URLResponse
+        do {
+            (data, response) = try await session.data(for: req)
+        } catch {
+            throw Self.map(error)
+        }
+        guard (response as? HTTPURLResponse)?.statusCode == 206 else {
+            throw NetworkError.server("pCloud download: HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0) for a range request")
+        }
+        return data
     }
 
     /// 上傳：`uploadfile` 以 PUT＋`filename` 參數時，請求本文即檔案內容（不需 multipart）。

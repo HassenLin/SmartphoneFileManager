@@ -1,5 +1,15 @@
 # LOG
 
+- 2026-10-19｜**主執行器（大檔、多連線）＋子執行器（小檔）**
+  - 佇列依檔案大小分流：同時傳輸數 N ≥ 2 時 1 個主執行器專給 ≥ 大檔門檻（預設 200 MB，帳號選項可調）的檔案、N−1 個子執行器傳小檔；
+    只有主執行器會多連線（`ExecutorLanes`、`TransferExecutor.runLevel`）。大檔在背景等主執行器，不擋住後面的小檔。N = 1 時唯一執行器即主執行器。
+  - 「最大同時連線數」改為「大檔同時連線數」：`FileSource.resumeDownload(…connections:)` 由執行器決定連線數。
+    WebDAV／pCloud：`SegmentedDownload`（8 MiB 區塊、多連線 Range、隱藏狀態檔續傳、可從單一連線前段接續；WebDAV 先探測 Range 支援）；
+    FTP／SFTP：`pget -c -n`，進度解析 `.lftp-pget-status`。上傳不分段。Mac 端停止時清除狀態檔。HTTP 連線池＝(N−1)＋大檔連線數。
+  - 選項視窗新增「並行傳輸」段落（同時傳輸數、大檔門檻、大檔同時連線數）。
+  - 測試 107 項通過（新增：大小分流、單一執行器即主執行器、分區塊下載／續傳／前段接續、pget 狀態檔、選項）；
+    本機實測 FTP（pyftpdlib，pget 4 條連線）與 WebDAV（wsgidav）20 MiB 多連線下載與前段接續，內容一致。
+
 - 2026-10-18｜**網路帳號可並行上傳／下載多個檔案（帳號選項「同時傳輸數」）**
   - `ConnectionOptions.parallelTransfers`（預設 1，可在帳號選項或 設定 → 網路 全域預設調整，1～8）；HTTP 連線池至少容納同時傳輸數。
   - `FileSource.maxParallelTransfers`（預設 1；WebDAV／FTP／SFTP／pCloud 取自選項）；工作的並行數取涉及的非 Mac 來源中最小者。

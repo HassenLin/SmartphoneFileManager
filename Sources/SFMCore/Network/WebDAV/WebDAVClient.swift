@@ -274,6 +274,23 @@ final class WebDAVClient: @unchecked Sendable {
         }
     }
 
+    /// 伺服器是否支援 Range（多連線下載的前提）。以 `bytes=0-0` 探測、只看狀態碼即中止：
+    /// 不支援的伺服器會回整份檔案，不能用一般請求把它讀進記憶體
+    func supportsRange(_ path: String) async -> Bool {
+        let req = request("GET", path, headers: ["Range": "bytes=0-0"])
+        guard let (bytes, response) = try? await session.bytes(for: req) else { return false }
+        bytes.task.cancel()
+        return (response as? HTTPURLResponse)?.statusCode == 206
+    }
+
+    /// 取回一個區塊（多連線下載用）；必須是 206，否則代表伺服器沒照範圍回應
+    func fetchRange(_ path: String, _ range: ClosedRange<Int64>) async throws -> Data {
+        let req = request("GET", path, headers: ["Range": "bytes=\(range.lowerBound)-\(range.upperBound)"])
+        let (data, http) = try await send(req, what: "GET \(path)")
+        guard http.statusCode == 206 else { throw NetworkError.server("GET \(path): server ignored Range (HTTP \(http.statusCode))") }
+        return data
+    }
+
     func read(_ path: String, offset: Int64, length: Int) async throws -> Data {
         let req = request("GET", path, headers: ["Range": "bytes=\(offset)-\(offset + Int64(length) - 1)"])
         let (data, http) = try await send(req, accept: [416], what: "GET \(path)")

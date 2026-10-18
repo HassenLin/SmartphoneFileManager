@@ -215,6 +215,47 @@ struct TransferQueueTests {
         #expect(store.maxActiveDownloads <= 3)
     }
 
+    @Test func queueSplitsBySizeIntoMainAndSubExecutors() async throws {
+        let store = FakeStore()
+        store.directories.formUnion(["/a", "/a/dir"])
+        for index in 0..<3 { store.files["/a/dir/big\(index).bin"] = Data(repeating: 1, count: 100) }   // ≥ 門檻 → 主執行器
+        for index in 0..<6 { store.files["/a/dir/s\(index).txt"] = Data("\(index)".utf8) }               // 小檔 → 子執行器
+        var cloud = FakeSource(id: .network(UUID()), store: store, nativeCopy: false, delay: .milliseconds(40))
+        cloud.parallel = 3
+        cloud.threshold = 50
+        var other = FakeSource(id: .network(UUID()), store: FakeStore(), nativeCopy: false)
+        other.parallel = 3
+        other.store.directories.insert("/b")
+        let queue = makeQueue([cloud, other])
+        let job = try await finished(queue, queue.enqueue(.copy, items: [FileItem(path: "/a/dir", isDirectory: true, size: 0)],
+                                                          from: cloud.id, to: other.id, directory: "/b"))
+        #expect(job.state == .completed && other.store.files.count == 9)
+        // 只有主執行器多連線：大檔拿到大檔連線數、小檔一律 1；主執行器一次只處理一個大檔
+        #expect(store.connections["/a/dir/big0.bin"] == 4 && store.connections["/a/dir/s0.txt"] == 1)
+        #expect(store.maxActiveLarge == 1)
+        // 主 1 ＋ 子 2：總同時數不超過同時傳輸數
+        #expect(store.maxActiveDownloads <= 3 && store.maxActiveDownloads > 1)
+    }
+
+    @Test func singleLaneIsMainExecutor() async throws {
+        let store = FakeStore()
+        store.directories.formUnion(["/a", "/a/dir"])
+        store.files["/a/dir/big.bin"] = Data(repeating: 1, count: 100)
+        store.files["/a/dir/s.txt"] = Data("s".utf8)
+        var cloud = FakeSource(id: .network(UUID()), store: store, nativeCopy: false)
+        cloud.threshold = 50
+        let mac = MacFileSource()
+        let target = FileManager.default.temporaryDirectory.appendingPathComponent("sfm-lane-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: target) }
+        let queue = makeQueue([cloud, mac])
+        let job = try await finished(queue, queue.enqueue(.copy, items: [FileItem(path: "/a/dir", isDirectory: true, size: 0)],
+                                                          from: cloud.id, to: mac.id, directory: target.path))
+        // 同時傳輸數 1：逐檔，但唯一的執行器即主執行器——大檔仍多連線
+        #expect(job.state == .completed && store.maxActiveDownloads == 1)
+        #expect(store.connections["/a/dir/big.bin"] == 4 && store.connections["/a/dir/s.txt"] == 1)
+    }
+
     @Test func phoneSideKeepsTransfersSequential() async throws {
         let (android, store) = makeDevice(.android("A"), delay: .milliseconds(20))
         store.files["/a/dir/z.txt"] = Data("z".utf8)

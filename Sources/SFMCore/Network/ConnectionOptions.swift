@@ -20,9 +20,14 @@ public struct ConnectionOptions: Codable, Hashable, Sendable {
     public var timeoutSeconds: Int?
     public var retries: Int?
     public var retryDelaySeconds: Int?
+    /// 單一大檔下載的同時連線數（WebDAV／pCloud 分區塊 Range、FTP／SFTP `pget -n`）；1＝單一連線。
+    /// 上傳不分段：各協定都沒有可靠的「多連線寫同一檔」方式
     public var maxConnections: Int?
-    /// 同時傳輸的檔案數（工作佇列對此帳號一次上傳／下載幾個檔案；1＝逐檔）。見 `FileSource.maxParallelTransfers`
+    /// 同時傳輸的檔案數（工作佇列對此帳號一次上傳／下載幾個檔案；1＝逐檔）。見 `FileSource.maxParallelTransfers`。
+    /// ≥ 2 時其中 1 個名額保留給大檔、其餘給小檔（見 `TransferExecutor.runLevel`）
     public var parallelTransfers: Int?
+    /// 大檔門檻（MB）：達到才走大檔名額與多連線下載
+    public var largeFileThresholdMB: Int?
     /// 閒置多久後斷線（lftp `net:idle`）
     public var idleSeconds: Int?
 
@@ -56,6 +61,7 @@ public struct ConnectionOptions: Codable, Hashable, Sendable {
         retryDelaySeconds = r.retryDelaySeconds
         maxConnections = r.maxConnections
         parallelTransfers = r.parallelTransfers
+        largeFileThresholdMB = r.largeFileThresholdMB
         idleSeconds = r.idleSeconds
         ftpCharset = r.ftpCharset
         activeAddress = r.activeAddress
@@ -77,6 +83,7 @@ public struct ConnectionOptions: Codable, Hashable, Sendable {
             retryDelaySeconds: retryDelaySeconds ?? defaults.retryDelaySeconds,
             maxConnections: maxConnections ?? defaults.maxConnections,
             parallelTransfers: parallelTransfers ?? defaults.parallelTransfers,
+            largeFileThresholdMB: largeFileThresholdMB ?? defaults.largeFileThresholdMB,
             idleSeconds: idleSeconds ?? defaults.idleSeconds,
             ftpCharset: ftpCharset ?? defaults.ftpCharset,
             activeAddress: activeAddress ?? defaults.activeAddress,
@@ -96,6 +103,7 @@ public struct ConnectionOptions: Codable, Hashable, Sendable {
         public var maxConnections = 4
         /// 預設逐檔（與加入此選項前相同）；雲端／WebDAV 調高可明顯加快大量小檔
         public var parallelTransfers = 1
+        public var largeFileThresholdMB = 200
         public var idleSeconds = 180
         public var ftpCharset = ""
         public var activeAddress = ""
@@ -109,7 +117,7 @@ public struct ConnectionOptions: Codable, Hashable, Sendable {
         public init() {}
 
         public init(timeoutSeconds: Int, retries: Int, retryDelaySeconds: Int, maxConnections: Int,
-                    parallelTransfers: Int = 1, idleSeconds: Int,
+                    parallelTransfers: Int = 1, largeFileThresholdMB: Int = 200, idleSeconds: Int,
                     ftpCharset: String, activeAddress: String, activePortRange: String, serverTimeZone: String,
                     verifyCertificate: Bool, minimumTLS: TLSVersion, extraLftpCommands: String,
                     partialWrite: PartialWriteMode) {
@@ -118,6 +126,7 @@ public struct ConnectionOptions: Codable, Hashable, Sendable {
             self.retryDelaySeconds = retryDelaySeconds
             self.maxConnections = maxConnections
             self.parallelTransfers = parallelTransfers
+            self.largeFileThresholdMB = largeFileThresholdMB
             self.idleSeconds = idleSeconds
             self.ftpCharset = ftpCharset
             self.activeAddress = activeAddress
@@ -131,8 +140,12 @@ public struct ConnectionOptions: Codable, Hashable, Sendable {
 
         public static let standard = Resolved()
 
-        /// HTTP 連線池大小：至少容納同時傳輸數，否則多出的傳輸只會在連線池排隊
-        public var connectionPoolSize: Int { max(1, maxConnections, parallelTransfers) }
+        /// HTTP 連線池大小：小檔名額（同時傳輸數 − 1）＋ 一個大檔的連線數，否則多出的請求只會在連線池排隊
+        public var connectionPoolSize: Int { max(1, parallelTransfers - 1) + max(1, maxConnections) }
+
+        /// 大檔門檻（位元組）
+        public var largeFileThreshold: Int64 { Int64(max(1, largeFileThresholdMB)) << 20 }
+
     }
 }
 
@@ -156,6 +169,7 @@ public extension ConnectionOptions.Resolved {
             retryDelaySeconds: try c.decodeIfPresent(Int.self, forKey: .retryDelaySeconds) ?? d.retryDelaySeconds,
             maxConnections: try c.decodeIfPresent(Int.self, forKey: .maxConnections) ?? d.maxConnections,
             parallelTransfers: try c.decodeIfPresent(Int.self, forKey: .parallelTransfers) ?? d.parallelTransfers,
+            largeFileThresholdMB: try c.decodeIfPresent(Int.self, forKey: .largeFileThresholdMB) ?? d.largeFileThresholdMB,
             idleSeconds: try c.decodeIfPresent(Int.self, forKey: .idleSeconds) ?? d.idleSeconds,
             ftpCharset: try c.decodeIfPresent(String.self, forKey: .ftpCharset) ?? d.ftpCharset,
             activeAddress: try c.decodeIfPresent(String.self, forKey: .activeAddress) ?? d.activeAddress,

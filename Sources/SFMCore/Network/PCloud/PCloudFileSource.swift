@@ -9,11 +9,15 @@ public struct PCloudFileSource: FileSource {
     public let account: NetworkAccount
     let client: PCloudClient
     public let maxParallelTransfers: Int
+    public let largeFileThreshold: Int64?
+    let options: ConnectionOptions.Resolved
 
     init(account: NetworkAccount, token: PCloudToken, options: ConnectionOptions.Resolved) {
         self.account = account
         self.client = PCloudClient(region: account.pcloudRegion, token: token, options: options)
         self.maxParallelTransfers = max(1, options.parallelTransfers)
+        self.largeFileThreshold = options.largeFileThreshold
+        self.options = options
     }
 
     public var id: SourceID { account.sourceID }
@@ -80,11 +84,28 @@ public struct PCloudFileSource: FileSource {
     }
 
     /// pCloud → Mac 的續傳（Range）；上傳方向用預設實作（整份重傳）
+    public var largeFileConnections: Int { max(1, options.maxConnections) }
+
     public func resumeDownload(_ path: String, to localURL: URL, totalSize: Int64,
                                onProgress: @escaping @Sendable (Double) -> Void) async throws {
+        try await resumeDownload(path, to: localURL, totalSize: totalSize, connections: 1, onProgress: onProgress)
+    }
+
+    /// `connections > 1`（主執行器的大檔）：同一個下載連結多連線分區塊
+    public func resumeDownload(_ path: String, to localURL: URL, totalSize: Int64, connections: Int,
+                               onProgress: @escaping @Sendable (Double) -> Void) async throws {
+        let segmented = SegmentedDownload.hasState(localURL)
         var have = NetworkTransfer.localSize(localURL)
         if have > totalSize || !FileManager.default.fileExists(atPath: localURL.path) { have = 0 }
-        guard have < totalSize || totalSize == 0 else { return onProgress(1) }
+        guard have < totalSize || totalSize == 0 || segmented else { return onProgress(1) }
+        // 有狀態檔＝上次就是分區塊，一定接著用
+        if segmented || connections > 1 {
+            let link = try await client.downloadLink(path)
+            return try await SegmentedDownload.run(to: localURL, totalSize: totalSize, connections: max(1, connections),
+                                                   onProgress: onProgress) { [client] range in
+                try await client.fetchRange(link, range)
+            }
+        }
         try await client.download(path, to: localURL, offset: have, totalSize: totalSize, onProgress: onProgress)
     }
 }

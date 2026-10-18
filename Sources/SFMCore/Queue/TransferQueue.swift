@@ -213,7 +213,8 @@ public final class TransferQueue {
                 save()
             }
             guard let roots = self.job(id)?.roots else { return }
-            // 同時傳輸數：取涉及的非 Mac 來源中最小的上限（Mac 本機不限制；裝置固定 1，所以 手機 ⇄ 雲端 仍逐檔）
+            // 同時傳輸數：取涉及的非 Mac 來源中最小的上限（Mac 本機不限制；裝置固定 1，所以 手機 ⇄ 雲端 仍逐檔）。
+            // ≥ 2 時建立主執行器（大檔）＋子執行器（小檔），執行器依大小分流（見 TransferExecutor）
             let parallel = [source, destination].compactMap { $0 }.filter { $0.id.kind != .mac }
                 .map(\.maxParallelTransfers).min() ?? 1
             var executor = TransferExecutor(
@@ -222,7 +223,7 @@ public final class TransferQueue {
                 progress: { nodeID, bytes in buffer.submit(nodeID, bytes) },
                 ask: { [weak self] conflict in await self?.ask(conflict) ?? .skip },
                 options: job.syncOptions, twoWay: job.syncTwoWay == true)
-            if parallel > 1 { executor.slots = TransferSlots(parallel) }
+            executor.lanes = ExecutorLanes(parallelTransfers: parallel)
             try await executor.run(roots)
             finish(id, cancelled: false)
         } catch is CancellationError {

@@ -11,6 +11,8 @@ public struct WebDAVFileSource: FileSource {
     let client: WebDAVClient
     let partialWrite: PartialWriteMode
     public let maxParallelTransfers: Int
+    public let largeFileThreshold: Int64?
+    let options: ConnectionOptions.Resolved
 
     init(account: NetworkAccount, password: String, options: ConnectionOptions.Resolved) {
         self.account = account
@@ -23,6 +25,8 @@ public struct WebDAVFileSource: FileSource {
                                    password: password, pinnedSHA256: account.pinnedCertSHA256, options: options)
         self.partialWrite = options.partialWrite
         self.maxParallelTransfers = max(1, options.parallelTransfers)
+        self.largeFileThreshold = options.largeFileThreshold
+        self.options = options
     }
 
     public var id: SourceID { account.sourceID }
@@ -92,11 +96,29 @@ public struct WebDAVFileSource: FileSource {
 
     // MARK: 續傳
 
+    public var largeFileConnections: Int { max(1, options.maxConnections) }
+
     public func resumeDownload(_ path: String, to localURL: URL, totalSize: Int64,
                                onProgress: @escaping @Sendable (Double) -> Void) async throws {
+        try await resumeDownload(path, to: localURL, totalSize: totalSize, connections: 1, onProgress: onProgress)
+    }
+
+    /// `connections > 1`（主執行器的大檔）：多連線分區塊；伺服器不支援 Range 時退回單一連線
+    public func resumeDownload(_ path: String, to localURL: URL, totalSize: Int64, connections: Int,
+                               onProgress: @escaping @Sendable (Double) -> Void) async throws {
+        let segmented = SegmentedDownload.hasState(localURL)
         var have = NetworkTransfer.localSize(localURL)
         if have > totalSize || !FileManager.default.fileExists(atPath: localURL.path) { have = 0 }
-        guard have < totalSize || totalSize == 0 else { return onProgress(1) }
+        guard have < totalSize || totalSize == 0 || segmented else { return onProgress(1) }
+        // 有狀態檔＝上次就是分區塊，一定接著用（單一連線無法接續有空洞的檔案）
+        var useSegments = segmented
+        if !useSegments && connections > 1 { useSegments = await client.supportsRange(path) }
+        if useSegments {
+            return try await SegmentedDownload.run(to: localURL, totalSize: totalSize, connections: max(1, connections),
+                                                   onProgress: onProgress) { [client] range in
+                try await client.fetchRange(path, range)
+            }
+        }
         try await client.download(path, to: localURL, offset: have, totalSize: totalSize, onProgress: onProgress)
     }
 

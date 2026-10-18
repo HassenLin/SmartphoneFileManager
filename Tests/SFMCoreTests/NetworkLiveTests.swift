@@ -117,6 +117,40 @@ struct NetworkLiveTests {
         #expect(try await !source.exists(root))
     }
 
+    /// 主執行器的大檔多連線下載（WebDAV／pCloud 分區塊 Range、FTP／SFTP `pget -n`）：
+    /// 全新下載，以及從單一連線留下的前段接續
+    @Test(arguments: NetworkLiveTarget.all)
+    func multiConnectionDownload(_ target: NetworkLiveTarget) async throws {
+        let source = try NetworkSourceFactory.make(target.account, options: target.account.options.resolved(defaults: .standard),
+                                                   secret: target.password)
+        let fm = FileManager.default
+        let local = fm.temporaryDirectory.appendingPathComponent("sfm-live-\(UUID().uuidString)")
+        try fm.createDirectory(at: local, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: local) }
+        var bytes = Data(count: 20 << 20)     // 超過 2 個區塊（8 MiB）
+        bytes.withUnsafeMutableBytes { _ = SecRandomCopyBytes(kSecRandomDefault, $0.count, $0.baseAddress!) }
+        let original = local.appendingPathComponent("big.bin")
+        try bytes.write(to: original)
+        let root = RemotePath.join(target.account.normalizedRootPath, "sfm-live-\(UUID().uuidString.prefix(8))")
+        try await source.makeDirectory(at: root)
+        do {
+            let remote = RemotePath.join(root, "big file.bin")
+            try await source.upload(original, to: remote) { _ in }
+            let fresh = local.appendingPathComponent("fresh.bin")
+            try await source.resumeDownload(remote, to: fresh, totalSize: Int64(bytes.count), connections: 4) { _ in }
+            #expect(try Data(contentsOf: fresh) == bytes)
+            #expect(PartialDownloadFiles.sidecars(of: fresh).allSatisfy { !fm.fileExists(atPath: $0.path) })
+            let prefix = local.appendingPathComponent("prefix.bin")
+            try bytes.prefix(9 << 20).write(to: prefix)
+            try await source.resumeDownload(remote, to: prefix, totalSize: Int64(bytes.count), connections: 4) { _ in }
+            #expect(try Data(contentsOf: prefix) == bytes)
+        } catch {
+            try? await source.delete(root)
+            throw error
+        }
+        try await source.delete(root)
+    }
+
     @Test(arguments: NetworkLiveTarget.all)
     func wrongPasswordIsAuthenticationError(_ target: NetworkLiveTarget) async throws {
         guard target.account.protocol != .sftp || target.account.sftpAuth == .password else { return }

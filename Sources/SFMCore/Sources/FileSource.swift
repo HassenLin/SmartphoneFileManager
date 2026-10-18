@@ -67,6 +67,10 @@ public protocol FileSource: Sendable {
     /// 工作佇列對此來源同時傳輸的檔案數上限（預設 1＝逐檔）。網路帳號由選項「同時傳輸數」決定；
     /// 裝置（adb、AFC、MTP）維持 1——單一 USB 通道並行不會更快，MTP 更只能序列存取
     var maxParallelTransfers: Int { get }
+    /// 大檔門檻：達到的檔案交給主執行器（見 `TransferExecutor`）；nil＝不區分大小檔
+    var largeFileThreshold: Int64? { get }
+    /// 主執行器下載一個大檔時用幾條連線（1＝單一連線）
+    var largeFileConnections: Int { get }
 
     func list(_ directory: String, includeHidden: Bool) async throws -> [FileItem]
     func isDirectory(_ path: String) async throws -> Bool
@@ -96,6 +100,8 @@ public protocol FileSource: Sendable {
     /// 單檔 來源 → Mac：`localURL` 已有部分內容時從其大小接著下載
     func resumeDownload(_ path: String, to localURL: URL, totalSize: Int64,
                         onProgress: @escaping @Sendable (Double) -> Void) async throws
+    func resumeDownload(_ path: String, to localURL: URL, totalSize: Int64, connections: Int,
+                        onProgress: @escaping @Sendable (Double) -> Void) async throws
     /// 單檔 Mac → 來源：目的已有部分內容時從其大小接著上傳
     func resumeUpload(_ localURL: URL, to path: String, onProgress: @escaping @Sendable (Double) -> Void) async throws
     /// 單檔同來源內複製：目的已有部分內容時接著複製
@@ -105,6 +111,15 @@ public protocol FileSource: Sendable {
 
 public extension FileSource {
     var maxParallelTransfers: Int { 1 }
+    var largeFileThreshold: Int64? { nil }
+    var largeFileConnections: Int { 1 }
+
+    /// 指定連線數的續傳下載（主執行器對大檔傳入 `largeFileConnections`，子執行器一律 1）。
+    /// 預設忽略連線數：只有網路來源支援多連線
+    func resumeDownload(_ path: String, to localURL: URL, totalSize: Int64, connections: Int,
+                        onProgress: @escaping @Sendable (Double) -> Void) async throws {
+        try await resumeDownload(path, to: localURL, totalSize: totalSize, onProgress: onProgress)
+    }
 
     func discard(_ path: String) async throws { try await delete(path) }
 

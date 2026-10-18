@@ -50,7 +50,7 @@
 | 拷貝／剪下／貼上 | 表格焦點時 ⌘C／⌘X／⌘V；右鍵「拷貝、剪下、貼上、貼到「資料夾」」；對單檔、資料夾、多選都適用。Finder 拷貝的檔案可直接貼到裝置；Mac 項目拷貝後可貼到 Finder |
 | 刪除 | Delete 鍵或右鍵；Mac 為移到垃圾桶，裝置為永久刪除（含資料夾內容），皆會確認 |
 | 窗格互傳 | 右鍵「複製／移動到另一窗格」、拖放（窗格 ⇄ 窗格、Finder → 窗格、Mac 窗格 → Finder；裝置檔案存到 Mac 用「匯出」或拖到 Mac 窗格）；同 Finder：同一來源拖放為移動（原生 mv），按住 Option 為拷貝，不同來源及 Finder 拖入為拷貝 |
-| 工作佇列 | 拷貝／移動／刪除都進入底部「工作」面板（可收合、可調高度）：樹狀展開到檔案、各自進度；**立即開始**（資料夾執行到才列出內容，不先掃描整棵樹），顯示百分比、速率與預估剩餘時間（目前檔案優先；仍在掃描時標「至少」）；網路帳號可在選項設「同時傳輸數」並行上傳／下載多個檔案；暫停／繼續／停止／移除；每台裝置一次一個工作（不同裝置並行）；**關閉 app 後保留**，重開時為暫停、按繼續才執行 |
+| 工作佇列 | 拷貝／移動／刪除都進入底部「工作」面板（可收合、可調高度）：樹狀展開到檔案、各自進度；**立即開始**（資料夾執行到才列出內容，不先掃描整棵樹），顯示百分比、速率與預估剩餘時間（目前檔案優先；仍在掃描時標「至少」）；網路帳號可在選項設「同時傳輸數」並行傳輸：≥ 2 時 1 個主執行器專給大檔（門檻預設 200 MB，可調）、其餘子執行器傳小檔；只有主執行器的大檔下載會用多條連線（「大檔同時連線數」：WebDAV／pCloud 分區塊 Range、FTP／SFTP `pget -n`）；暫停／繼續／停止／移除；每台裝置一次一個工作（不同裝置並行）；**關閉 app 後保留**，重開時為暫停、按繼續才執行 |
 | 衝突與續傳 | 目的已有同名檔案時詢問（類似 FTP）：並列兩邊大小與日期，可選續傳／覆寫／保留兩者／略過，可套用到其餘衝突；資料夾同名則合併。大檔從中斷處續傳：Android（`tail -c`／`exec-in`／`dd`）、MTP（Partial Object）、Mac；iPhone（AFC 無法指定位置）一律重傳 |
 | 傳輸路徑 | 同裝置同檔案系統為原生 mv（瞬間）；其餘逐檔傳輸：同裝置原生 cp（不經 Mac）、跨裝置經 Mac 中繼（暫存於 Application Support，可續傳）；跨檔案系統搬移會預檢空間 |
 | 檔案操作 | 新增資料夾（＋選單、右鍵、⇧⌘N 作用在最後操作的窗格）/檔案、改名、權限（Android chmod）、路徑列右鍵拷貝路徑、**從 Finder 把檔案或資料夾拖到路徑列＝窗格切到這台 Mac 並開啟該位置**（檔案則開啟所在資料夾並選取）、遞迴搜尋（Android）、排序（點名稱／大小／修改日期欄位標題，或排序選單）、篩選 |
@@ -98,7 +98,7 @@ Sources/SFMCore/              L1：零 UI 相依，可 swift test
   Sources/                    FileSource 抽象（含續傳介面 ResumableTransfer）+ Mac／Android／iPhone／MTP 實作；
                               MacLocations（Mac 位置捷徑：雲端硬碟、磁碟）
   MTP/                        MTPSession（每台裝置一條序列佇列）、MTPDeviceManager（偵測／開啟／釋放）
-  Queue/                      工作佇列：TransferJob（模型與 FSM）、TransferPlanner（建立節點，資料夾執行到才展開）、TransferRate（速率／剩餘時間）、TransferSlots（並行名額）、SyncPlanner（同步比對）、
+  Queue/                      工作佇列：TransferJob（模型與 FSM）、TransferPlanner（建立節點，資料夾執行到才展開）、TransferRate（速率／剩餘時間）、TransferSlots／ExecutorLanes（主／子執行器名額）、SyncPlanner（同步比對）、
                               RsyncCommand（Mac ↔ Mac 同步）、
                               TransferExecutor（逐節點執行、衝突、續傳）、TransferQueue（排程、持久化）
   Model/                      FileItem、StatParser、SortType、TextCodec、Bookmark（舊版）、BookmarkLibrary（書籤＋同步專案）
