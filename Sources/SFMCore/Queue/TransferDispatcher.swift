@@ -3,9 +3,9 @@ import Foundation
 /// 主執行器與子執行器的工作分派（同一個工作共用一份；只有網路帳號會啟用，見 `ExecutorLanes`）。
 ///
 /// 角色：
-/// - **主執行器**（1 個）：一律多連線下載。取工作順序：主執行器接手的檔案 → 排隊中的大檔 →
-///   都沒有時，**接手**子執行器正在跑的大檔（請子執行器停下、保留進度，主執行器以多連線續傳）。
-/// - **子執行器**（同時傳輸數 − 1 個）：一律單一連線。取工作順序：小檔 → 沒有小檔時取排隊中的大檔
+/// - **主執行器**（1 個）：一律多連線下載，**大檔優先**。取工作順序：主執行器接手的檔案 → 排隊中的大檔 →
+///   都沒有時，**接手**子執行器正在跑的大檔（請子執行器停下、保留進度，主執行器以多連線續傳）→ 再沒有才取小檔。
+/// - **子執行器**（同時傳輸數 − 1 個）：一律單一連線，**小檔優先**。取工作順序：小檔 → 沒有小檔時取排隊中的大檔
 ///   （主執行器正在忙；之後主執行器空下來會把它接過去）。
 ///
 /// 遍歷樹的一方（`TransferExecutor.runLevel`）是生產者：`submit` 送出檔案、`result` 等結果。
@@ -146,7 +146,11 @@ actor TransferDispatcher {
                 candidate.handoffRequested = true
                 handoffInFlight = candidate.id
                 candidate.cancelRunning?()
-            } else if finished && handoffInFlight == nil
+            } else if handoffInFlight == nil && !small.isEmpty {
+                // 沒有大檔可做、也沒有可接手的：主執行器也處理小檔，不閒著
+                mainWaiter = nil
+                waiter.resume(returning: small.removeFirst())
+            } else if finished && handoffInFlight == nil && small.isEmpty
                         && !runningOnSub.values.contains(where: { $0.handoffable && !$0.handoffRequested }) {
                 mainWaiter = nil
                 waiter.resume(returning: nil)

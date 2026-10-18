@@ -278,6 +278,25 @@ struct TransferQueueTests {
         #expect(store.connections.values.sorted() == [1, 1, 4])
     }
 
+    @Test func mainExecutorTakesSmallFilesWhenNoLargeWork() async throws {
+        let store = FakeStore()
+        store.directories.formUnion(["/a", "/a/dir"])
+        for index in 0..<6 { store.files["/a/dir/s\(index).txt"] = Data("\(index)".utf8) }
+        var cloud = FakeSource(id: .network(UUID()), store: store, nativeCopy: false, delay: .milliseconds(60))
+        cloud.parallel = 2
+        cloud.threshold = 50
+        var other = FakeSource(id: .network(UUID()), store: FakeStore(), nativeCopy: false)
+        other.parallel = 2
+        other.store.directories.insert("/b")
+        let queue = makeQueue([cloud, other])
+        let job = try await finished(queue, queue.enqueue(.copy, items: [FileItem(path: "/a/dir", isDirectory: true, size: 0)],
+                                                          from: cloud.id, to: other.id, directory: "/b"))
+        #expect(job.state == .completed && other.store.files.count == 6)
+        // 全是小檔：主執行器不閒著，與子執行器同時處理（主執行器那份用多連線）
+        #expect(store.maxActiveDownloads == 2)
+        #expect(store.connections.values.contains(4) && store.connections.values.contains(1))
+    }
+
     @Test func mainExecutorTakesOverLargeDownloadFromSub() async throws {
         let store = FakeStore()
         store.directories.formUnion(["/a", "/a/dir"])
