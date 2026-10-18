@@ -230,7 +230,7 @@ struct TransferQueueTests {
         let job = try await finished(queue, queue.enqueue(.copy, items: [FileItem(path: "/a/dir", isDirectory: true, size: 0)],
                                                           from: cloud.id, to: other.id, directory: "/b"))
         #expect(job.state == .completed && other.store.files.count == 9)
-        // 只有主執行器多連線：大檔拿到大檔連線數、小檔一律 1；主執行器一次只處理一個大檔
+        // 大檔進主執行器（多連線）、小檔進子執行器（單一連線）；主執行器一次只處理一個大檔
         #expect(store.connections["/a/dir/big0.bin"] == 4 && store.connections["/a/dir/s0.txt"] == 1)
         #expect(store.maxActiveLarge == 1)
         // 主 1 ＋ 子 2：總同時數不超過同時傳輸數
@@ -251,9 +251,9 @@ struct TransferQueueTests {
         let queue = makeQueue([cloud, mac])
         let job = try await finished(queue, queue.enqueue(.copy, items: [FileItem(path: "/a/dir", isDirectory: true, size: 0)],
                                                           from: cloud.id, to: mac.id, directory: target.path))
-        // 同時傳輸數 1：逐檔，但唯一的執行器即主執行器——大檔仍多連線
+        // 同時傳輸數 1：逐檔，唯一的執行器即主執行器——主執行器一律多連線，不論大小
         #expect(job.state == .completed && store.maxActiveDownloads == 1)
-        #expect(store.connections["/a/dir/big.bin"] == 4 && store.connections["/a/dir/s.txt"] == 1)
+        #expect(store.connections["/a/dir/big.bin"] == 4 && store.connections["/a/dir/s.txt"] == 4)
     }
 
     @Test func phoneSideKeepsTransfersSequential() async throws {

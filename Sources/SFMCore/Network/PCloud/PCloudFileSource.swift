@@ -99,7 +99,8 @@ public struct PCloudFileSource: FileSource {
         if have > totalSize || !FileManager.default.fileExists(atPath: localURL.path) { have = 0 }
         guard have < totalSize || totalSize == 0 || segmented else { return onProgress(1) }
         // 有狀態檔＝上次就是分區塊，一定接著用
-        if segmented || connections > 1 {
+        // 不到兩個區塊的檔案切不開，直接單一連線
+        if segmented || (connections > 1 && totalSize > SegmentedDownload.blockSize) {
             let link = try await client.downloadLink(path)
             return try await SegmentedDownload.run(to: localURL, totalSize: totalSize, connections: max(1, connections),
                                                    onProgress: onProgress) { [client] range in

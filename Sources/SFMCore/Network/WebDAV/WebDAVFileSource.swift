@@ -112,7 +112,10 @@ public struct WebDAVFileSource: FileSource {
         guard have < totalSize || totalSize == 0 || segmented else { return onProgress(1) }
         // 有狀態檔＝上次就是分區塊，一定接著用（單一連線無法接續有空洞的檔案）
         var useSegments = segmented
-        if !useSegments && connections > 1 { useSegments = await client.supportsRange(path) }
+        // 不到兩個區塊的檔案切不開：多連線也只會有一個請求，直接單一連線（省掉 Range 探測）
+        if !useSegments && connections > 1 && totalSize > SegmentedDownload.blockSize {
+            useSegments = await client.supportsRange(path)
+        }
         if useSegments {
             return try await SegmentedDownload.run(to: localURL, totalSize: totalSize, connections: max(1, connections),
                                                    onProgress: onProgress) { [client] range in

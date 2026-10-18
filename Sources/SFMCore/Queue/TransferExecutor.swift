@@ -1,8 +1,16 @@
 import Foundation
 
+/// 單檔傳輸由哪個執行器處理
+enum ExecutorLane: Sendable {
+    /// 大檔（或逐檔時的全部檔案）；下載用多條連線
+    case main
+    /// 小檔；單一連線
+    case sub
+}
+
 /// 主執行器與子執行器的名額（同一工作共用；佇列依同時傳輸數建立）
 struct ExecutorLanes: Sendable {
-    /// 主執行器：一次一個大檔，下載可用多條連線
+    /// 主執行器：一次一個大檔，下載一律多條連線
     let main: TransferSlots
     /// 子執行器：小檔，同時傳輸數 − 1 個，各一條連線
     let sub: TransferSlots
@@ -33,8 +41,9 @@ enum NodeEvent: Sendable {
 /// 停止時由佇列負責清除這些不完整內容。其他錯誤只讓該節點失敗，繼續處理其餘節點。
 ///
 /// **主執行器／子執行器**（網路帳號「同時傳輸數」≥ 2 時，見 `ExecutorLanes`）：遍歷樹時依檔案大小分流——
-/// 達到大檔門檻的交給**主執行器**（一次一個，下載可用多條連線）、其餘交給**子執行器**（同時傳輸數 − 1 個，各一條連線）。
-/// 只有主執行器會多連線。逐檔（同時傳輸數 1）時唯一的那個就是主執行器：大檔一樣多連線、小檔單一連線。
+/// 達到大檔門檻的交給**主執行器**（一次一個）、其餘交給**子執行器**（同時傳輸數 − 1 個）。
+/// **主執行器一律多連線下載**（帳號選項「大檔同時連線數」），子執行器一律單一連線——連線數由執行器決定，不看檔案大小。
+/// 逐檔（同時傳輸數 1）時唯一的那個就是主執行器：每個檔案都以多連線下載。
 struct TransferExecutor: Sendable {
     let jobID: UUID
     let source: any FileSource
@@ -88,7 +97,7 @@ struct TransferExecutor: Sendable {
             var allDone = true
             for node in nodes {
                 try Task.checkCancellation()
-                if try await runNode(node) != .done { allDone = false }
+                if try await runNode(node, on: .main) != .done { allDone = false }
             }
             return allDone
         }
@@ -99,12 +108,12 @@ struct TransferExecutor: Sendable {
                 let finished = node.state == .done || node.state == .skipped
                 if node.operation == .transferFile && !finished {
                     if isLarge(node) {
-                        group.addTask { try await lanes.main.run { try await runNode(node) } }
+                        group.addTask { try await lanes.main.run { try await runNode(node, on: .main) } }
                     } else {
                         try await lanes.sub.acquire()
-                        group.addTask { try await lanes.sub.runAcquired { try await runNode(node) } }
+                        group.addTask { try await lanes.sub.runAcquired { try await runNode(node, on: .sub) } }
                     }
-                } else if try await runNode(node) != .done {
+                } else if try await runNode(node, on: .main) != .done {
                     allDone = false
                 }
             }
@@ -115,9 +124,10 @@ struct TransferExecutor: Sendable {
     }
 
     /// 回傳節點最終狀態（父資料夾據此決定移動時能否刪除來源）
-    private func runNode(_ node: TransferNode) async throws -> NodeState {
+    /// `lane`：由哪個執行器處理（只影響單檔傳輸的連線數；資料夾等其他節點不分）
+    private func runNode(_ node: TransferNode, on lane: ExecutorLane) async throws -> NodeState {
         if node.state == .done || node.state == .skipped || node.operation == .rejected { return node.state }
-        if node.reversed == true && !isSwapped, let swapped { return try await swapped.runNode(node) }
+        if node.reversed == true && !isSwapped, let swapped { return try await swapped.runNode(node, on: lane) }
         do {
             let state: NodeState
             switch node.operation {
@@ -126,7 +136,7 @@ struct TransferExecutor: Sendable {
             case .rsync: state = try await rsync(node)
             case .nativeMove: state = try await nativeMove(node)
             case .makeDirectory: state = try await makeDirectory(node)
-            case .transferFile: state = try await transferFile(node)
+            case .transferFile: state = try await transferFile(node, on: lane)
             case .rejected: state = node.state
             }
             if state != .partial, node.operation != .rsync { await report(.state(node.id, state)) }
@@ -206,7 +216,7 @@ struct TransferExecutor: Sendable {
         return allDone ? .done : .failed
     }
 
-    private func transferFile(_ node: TransferNode) async throws -> NodeState {
+    private func transferFile(_ node: TransferNode, on lane: ExecutorLane) async throws -> NodeState {
         guard let destination else { return .failed }
         var target = node.targetPath
         // 自己中斷或失敗過的（partial／running／failed）直接續傳；否則目的已有同名檔案時詢問
@@ -228,8 +238,8 @@ struct TransferExecutor: Sendable {
         let progress: @Sendable (Double) -> Void = { [sink = self.progress, id = node.id] fraction in
             sink(id, Int64(Double(size) * min(1, max(0, fraction))))
         }
-        // 大檔由主執行器處理：下載可用多條連線；小檔（子執行器）一律單一連線
-        let connections = isLarge(node) ? source.largeFileConnections : 1
+        // 主執行器一律多連線（不論檔案大小）；子執行器一律單一連線
+        let connections = lane == .main ? source.largeFileConnections : 1
         do {
             try await copyFile(node.sourcePath, to: target, size: size, destination: destination,
                                stagingKey: node.id.uuidString, connections: connections, progress: progress)

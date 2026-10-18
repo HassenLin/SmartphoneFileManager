@@ -45,7 +45,7 @@ struct ConnectionOptionsForm: View {
             } header: {
                 Text("Parallel Transfers")
             } footer: {
-                Text("With 2 or more simultaneous transfers, one slot (the main executor) is kept for large files and downloads them over several connections; the other slots move small files one connection each. With 1, files go one at a time and large downloads still use several connections. Uploads always use one connection per file. With a phone on the other side, transfers stay one at a time. FTP servers often limit connections per IP.")
+                Text("The main executor always downloads over several connections. With 2 or more simultaneous transfers, it takes the large files and the other slots move small files one connection each. With 1, it is the only executor, so every download uses several connections. Uploads always use one connection per file. With a phone on the other side, transfers stay one at a time. FTP servers often limit connections per IP.")
                     .font(.caption)
             }
             if shows(.ftp, .sftp) {

@@ -673,5 +673,5 @@
 "Connections per large file": "大檔同時連線數",
 "Large file size (MB)": "大檔門檻（MB）",
 "Parallel Transfers": "並行傳輸",
-"With 2 or more simultaneous transfers, one slot (the main executor) is kept for large files and downloads them over several connections; the other slots move small files one connection each. With 1, files go one at a time and large downloads still use several connections. Uploads always use one connection per file. With a phone on the other side, transfers stay one at a time. FTP servers often limit connections per IP.": "同時傳輸數 ≥ 2 時，保留 1 個名額（主執行器）給大檔，下載時用多條連線；其餘名額（子執行器）傳小檔，各一條連線。設為 1 時逐檔傳輸，大檔下載仍用多條連線。上傳每個檔案一律一條連線。另一端是手機時仍逐檔。FTP 伺服器常限制每個 IP 的連線數。"
+"The main executor always downloads over several connections. With 2 or more simultaneous transfers, it takes the large files and the other slots move small files one connection each. With 1, it is the only executor, so every download uses several connections. Uploads always use one connection per file. With a phone on the other side, transfers stay one at a time. FTP servers often limit connections per IP.": "主執行器一律以多條連線下載。同時傳輸數 ≥ 2 時，主執行器負責大檔，其餘名額（子執行器）傳小檔，各一條連線；設為 1 時主執行器是唯一的執行器，每個下載都用多條連線。上傳每個檔案一律一條連線。另一端是手機時仍逐檔。FTP 伺服器常限制每個 IP 的連線數。"
 }
