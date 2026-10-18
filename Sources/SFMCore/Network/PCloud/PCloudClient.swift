@@ -39,13 +39,28 @@ final class PCloudClient: @unchecked Sendable {
         let contents: [Metadata]?
     }
 
-    private struct Envelope: Decodable {
+    struct Envelope: Decodable {
         let result: Int
         let error: String?
         let metadata: Metadata?
         let hosts: [String]?
         let path: String?
         let email: String?
+
+        private enum CodingKeys: String, CodingKey { case result, error, metadata, hosts, path, email }
+
+        /// `metadata` 多數方法是單一物件，但 `uploadfile` 回傳**陣列**（每個上傳檔一筆）→ 兩種都接受，取第一筆。
+        /// 其他欄位也寬鬆解碼：只有 `result` 是必要的，多一個意料外的型別不該讓成功的操作變成失敗
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            result = try c.decode(Int.self, forKey: .result)
+            error = try? c.decodeIfPresent(String.self, forKey: .error)
+            metadata = (try? c.decodeIfPresent(Metadata.self, forKey: .metadata))
+                ?? (try? c.decodeIfPresent([Metadata].self, forKey: .metadata))?.first
+            hosts = try? c.decodeIfPresent([String].self, forKey: .hosts)
+            path = try? c.decodeIfPresent(String.self, forKey: .path)
+            email = try? c.decodeIfPresent(String.self, forKey: .email)
+        }
     }
 
     // MARK: 請求
@@ -84,7 +99,9 @@ final class PCloudClient: @unchecked Sendable {
     @discardableResult
     private func decode(_ data: Data, method: String) throws -> Envelope {
         guard let envelope = try? JSONDecoder().decode(Envelope.self, from: data) else {
-            throw NetworkError.server("pCloud \(method): unexpected response")
+            // 附上回應開頭，下次遇到才知道伺服器回了什麼（不含 token：回應本文不會帶）
+            let head = String(decoding: data.prefix(200), as: UTF8.self)
+            throw NetworkError.server("pCloud \(method): unexpected response: \(head)")
         }
         guard envelope.result == 0 else { throw Self.error(envelope.result, envelope.error ?? "", method: method) }
         return envelope

@@ -149,6 +149,15 @@ struct PCloudTests {
         #expect(PCloudLogin.passwordDigest(email: "me@x.com", password: "pw", digest: "d").count == 40)
     }
 
+    @Test func uploadResponseWithMetadataArrayDecodes() throws {
+        // uploadfile 的 metadata 是陣列（其他方法是物件）
+        let upload = #"{"result":0,"metadata":[{"name":"a.bin","isfolder":false,"size":3,"modified":"Thu, 21 Mar 2013 18:31:57 +0000"}],"fileids":[1]}"#
+        let decoded = try JSONDecoder().decode(PCloudClient.Envelope.self, from: Data(upload.utf8))
+        #expect(decoded.result == 0 && decoded.metadata?.name == "a.bin")
+        let stat = #"{"result":0,"metadata":{"name":"b","isfolder":true}}"#
+        #expect(try JSONDecoder().decode(PCloudClient.Envelope.self, from: Data(stat.utf8)).metadata?.isfolder == true)
+    }
+
     @Test func plusSignIsEncoded() {
         let client = PCloudClient(region: .eu, token: PCloudToken(kind: .oauth, value: "t"), options: .standard)
         let url = client.url("stat", ["path": "/a+b c.txt"])
