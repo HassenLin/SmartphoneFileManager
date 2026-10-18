@@ -302,6 +302,30 @@ struct TransferQueueTests {
         if let subLarge, let lastSmall { #expect(lastSmall < subLarge) }
     }
 
+    @Test func mainExecutorFinishesLargeFilesBeforeTakingSmallOnes() async throws {
+        let store = FakeStore()
+        store.directories.formUnion(["/a", "/a/dir"])
+        // 小檔名字排在前面（先送出），大檔在後面
+        for index in 0..<6 { store.files["/a/dir/a\(index).txt"] = Data("\(index)".utf8) }
+        for index in 0..<3 { store.files["/a/dir/z\(index).bin"] = Data(repeating: 1, count: 100) }
+        var cloud = FakeSource(id: .network(UUID()), store: store, nativeCopy: false, delay: .milliseconds(60))
+        cloud.parallel = 3
+        cloud.threshold = 50
+        var other = FakeSource(id: .network(UUID()), store: FakeStore(), nativeCopy: false)
+        other.parallel = 3
+        other.store.directories.insert("/b")
+        let queue = makeQueue([cloud, other])
+        let job = try await finished(queue, queue.enqueue(.copy, items: [FileItem(path: "/a/dir", isDirectory: true, size: 0)],
+                                                          from: cloud.id, to: other.id, directory: "/b"))
+        #expect(job.state == .completed && other.store.files.count == 9)
+        // 主執行器（多連線）第一個做的是大檔；它做的小檔都在所有大檔開始之後
+        let log = store.startLog
+        #expect(log.first { $0.1 == 4 }?.0.hasSuffix(".bin") == true)
+        let lastLarge = log.lastIndex { $0.0.hasSuffix(".bin") }
+        let mainSmall = log.firstIndex { $0.0.hasSuffix(".txt") && $0.1 == 4 }
+        if let lastLarge, let mainSmall { #expect(lastLarge < mainSmall) }
+    }
+
     @Test func mainExecutorTakesSmallFilesWhenNoLargeWork() async throws {
         let store = FakeStore()
         store.directories.formUnion(["/a", "/a/dir"])

@@ -5,6 +5,7 @@ import Foundation
 /// 角色：
 /// - **主執行器**（1 個）：一律多連線下載，**大檔優先**。取工作順序：主執行器接手的檔案 → 排隊中的大檔 →
 ///   都沒有時，**接手**子執行器正在跑的大檔（請子執行器停下、保留進度，主執行器以多連線續傳）→ 再沒有才取小檔。
+///   「沒有大檔」同樣要等**遍歷已停下**才算數（見下方子執行器的說明），否則名字排在後面的大檔還沒送進來。
 /// - **子執行器**（同時傳輸數 − 1 個）：一律單一連線，**小檔優先**。取工作順序：小檔 → 沒有小檔時取排隊中的大檔
 ///   （主執行器正在忙；之後主執行器空下來會把它接過去）。
 ///   「沒有小檔」必須是**遍歷已停下**（全部結束，或正在等這一層的結果）：遍歷還在送檔案、展開資料夾時，
@@ -151,14 +152,14 @@ actor TransferDispatcher {
             } else if !large.isEmpty {
                 mainWaiter = nil
                 waiter.resume(returning: large.removeFirst())
-            } else if handoffInFlight == nil,
+            } else if !producerActive, handoffInFlight == nil,
                       let candidate = runningOnSub.values.first(where: { $0.handoffable && !$0.handoffRequested }) {
                 // 主執行器空著、沒有大檔在排隊，但子執行器在跑大檔 → 請它停下交給主執行器（等 handOff 送來）
                 candidate.handoffRequested = true
                 handoffInFlight = candidate.id
                 candidate.cancelRunning?()
-            } else if handoffInFlight == nil && !small.isEmpty {
-                // 沒有大檔可做、也沒有可接手的：主執行器也處理小檔，不閒著
+            } else if !producerActive && handoffInFlight == nil && !small.isEmpty {
+                // 真的沒有大檔（遍歷已停下）、也沒有可接手的：主執行器也處理小檔，不閒著
                 mainWaiter = nil
                 waiter.resume(returning: small.removeFirst())
             } else if finished && handoffInFlight == nil && small.isEmpty
@@ -170,7 +171,7 @@ actor TransferDispatcher {
         while !subWaiters.isEmpty {
             if !small.isEmpty {
                 subWaiters.removeFirst().resume(returning: small.removeFirst())
-            } else if !large.isEmpty && mainWaiter == nil && (finished || producerWaiting) {
+            } else if !large.isEmpty && mainWaiter == nil && !producerActive {
                 // 真的沒有小檔（遍歷已停下）：取大檔（主執行器在忙；空著的話上面已經先給主執行器）
                 let item = large.removeFirst()
                 runningOnSub[item.id] = item
@@ -186,6 +187,9 @@ actor TransferDispatcher {
             producer.resume()
         }
     }
+
+    /// 遍歷還在送檔案（可能還有排在後面的大檔或小檔）。停下＝全部結束，或正在等這一層的結果
+    private var producerActive: Bool { !(finished || producerWaiting) }
 
     private func checkCancelled() throws {
         if cancelled { throw CancellationError() }
