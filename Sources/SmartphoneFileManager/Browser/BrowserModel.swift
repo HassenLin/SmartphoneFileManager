@@ -132,6 +132,12 @@ final class BrowserModel {
         }
     }
 
+    /// 來源本身換了（網路帳號改了設定）：一律以新來源重新載入目前資料夾
+    func replaceSource(_ resolved: (any FileSource)?) {
+        source = resolved
+        reload()
+    }
+
     /// Mac 窗格的起始資料夾：設定值 → 下載項目 → 個人專屬資料夾。
     /// 「下載項目」受 macOS 隱私保護（TCC），讀不到就退回個人專屬資料夾，避免一開就是錯誤畫面。
     static func defaultMacPath() -> String {

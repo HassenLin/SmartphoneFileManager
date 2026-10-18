@@ -75,6 +75,8 @@ final class AppModel {
     /// 拷貝／移動／刪除的工作佇列（樹狀進度、暫停／繼續／停止、關閉 app 後可繼續）
     let queue = TransferQueue()
     let bookmarks = BookmarkStore()
+    /// 網路帳號（WebDAV／FTP／SFTP／pCloud）
+    let accounts = AccountStore()
     let devices = DeviceMonitor()
     let terminals = TerminalStore()
     let left: BrowserModel
@@ -96,6 +98,8 @@ final class AppModel {
     }
 
     @ObservationIgnored private var didAutoSelectRight = false
+    /// 網路來源快取（帳號 id → 建立時的帳號庫版本＋來源）：URLSession／TLS 狀態沿用，帳號庫變更即失效
+    @ObservationIgnored private var networkSources: [UUID: (revision: Int, source: any FileSource)] = [:]
 
     init() {
         left = BrowserModel(side: .left, sourceID: Self.savedSource(.left) ?? .mac, toasts: toasts)
@@ -103,6 +107,7 @@ final class AppModel {
         isLeftPaneCollapsed = UserDefaults.standard.bool(forKey: SettingsKey.localPaneCollapsed)
         queue.resolver = { [weak self] in self?.resolve($0) }
         queue.onJobFinished = { [weak self] in self?.jobFinished($0) }
+        accounts.onChange = { [weak self] in self?.accountsDidChange() }
     }
 
     func pane(_ side: PaneSide) -> BrowserModel { side == .left ? left : right }
@@ -162,10 +167,21 @@ final class AppModel {
         return options
     }
 
+    /// 來源選單的網路帳號項目（與裝置分開一段；帳號一律可選，連不上時窗格顯示錯誤與處理方式）
+    var networkSourceOptions: [SourceOption] {
+        accounts.accounts.map { account in
+            SourceOption(id: account.sourceID,
+                         title: account.isEncrypted ? account.displayName
+                             : String(localized: "\(account.displayName) (not encrypted)"),
+                         symbol: Self.symbol(for: account.protocol), enabled: true)
+        }
+    }
+
     func title(for id: SourceID?) -> String {
         guard let id else { return String(localized: "Choose a source") }
         if let option = sourceOptions.first(where: { $0.id == id }) { return option.title }
         switch id.kind {
+        case .network: return accounts.account(for: id)?.displayName ?? String(localized: "Network account (deleted)")
         case .mac: return String(localized: "This Mac")
         case .android: return String(localized: "Android \(id.deviceID) (disconnected)")
         case .iphone: return String(localized: "iPhone (disconnected)")
@@ -179,6 +195,7 @@ final class AppModel {
         case .android: return "candybarphone"
         case .iphone: return "iphone"
         case .mtp: return Self.mtpSymbol
+        case .network: return accounts.account(for: id).map { Self.symbol(for: $0.protocol) } ?? "network.slash"
         case nil: return "questionmark.folder"
         }
     }
@@ -198,7 +215,76 @@ final class AppModel {
             return IPhoneFileSource(udid: id.deviceID, executable: tool, network: phone.network)
         case .mtp:
             return MTPDeviceManager.shared.source(serial: id.deviceID)
+        case .network:
+            return networkSource(id)
         }
+    }
+
+    static func symbol(for networkProtocol: NetworkProtocol) -> String {
+        switch networkProtocol {
+        case .webdav: return "network"
+        case .ftp: return "server.rack"
+        case .sftp: return "lock.shield"
+        case .pcloud: return "cloud"
+        }
+    }
+
+    // MARK: 網路來源
+
+    /// 網路帳號 → 來源（快取）。帳號已刪除、缺 lftp、鑰匙圈沒有密碼時為 nil，
+    /// 窗格改顯示 `networkUnavailableReason` 說明與處理方式。
+    private func networkSource(_ id: SourceID) -> (any FileSource)? {
+        guard let account = accounts.account(for: id) else { return nil }
+        if let cached = networkSources[account.id], cached.revision == accounts.revision { return cached.source }
+        guard let source = try? NetworkSourceFactory.make(account, options: accounts.options(for: account)) else {
+            networkSources[account.id] = nil
+            return nil
+        }
+        networkSources[account.id] = (accounts.revision, source)
+        return source
+    }
+
+    /// 網路來源無法使用的原因（窗格的未連線畫面用）；可用時為 nil
+    func networkUnavailableReason(_ id: SourceID?) -> NetworkError? {
+        guard let account = accounts.account(for: id) else { return nil }
+        do {
+            _ = try NetworkSourceFactory.make(account, options: accounts.options(for: account))
+            return nil
+        } catch let error as NetworkError {
+            return error
+        } catch {
+            return .server(error.localizedDescription)
+        }
+    }
+
+    /// 帳號庫變更（新增、編輯、刪除、登入／登出）：快取失效，顯示該帳號的窗格以新設定重新連線
+    private func accountsDidChange() {
+        networkSources = [:]
+        for pane in [left, right] where pane.sourceID?.kind == .network {
+            pane.replaceSource(resolve(pane.sourceID))
+        }
+        queue.schedule()
+    }
+
+    /// 帳號被哪些地方引用（帳號清單「使用中」欄、刪除確認）
+    struct AccountUsage {
+        var panes = 0
+        var bookmarks = 0
+        var syncProjects = 0
+        /// 尚未完成的工作（排隊、執行中、暫停）
+        var pendingJobs = 0
+
+        var total: Int { panes + bookmarks + syncProjects + pendingJobs }
+    }
+
+    func usage(of account: NetworkAccount) -> AccountUsage {
+        let id = account.sourceID
+        var usage = AccountUsage()
+        usage.panes = [left, right].filter { $0.sourceID == id }.count
+        usage.bookmarks = bookmarks.folders.filter { $0.location.source == id }.count
+        usage.syncProjects = bookmarks.syncProjects.filter { $0.left.source == id || $0.right.source == id }.count
+        usage.pendingJobs = queue.jobs.filter { !$0.state.isFinished && ($0.source == id || $0.destination == id) }.count
+        return usage
     }
 
     static let mtpSymbol = "cable.connector"
@@ -218,7 +304,7 @@ final class AppModel {
     /// 裝置清單變動時呼叫：更新兩窗格的來源可用性；右窗格尚未選擇時自動選第一台裝置
     func refreshSources() {
         if right.sourceID == nil, !didAutoSelectRight,
-           let first = sourceOptions.first(where: { $0.id != .mac && $0.enabled }) {
+           let first = sourceOptions.first(where: { $0.id != .mac && $0.enabled }) {   // 只自動選裝置，不自動連網路帳號
             didAutoSelectRight = true
             selectSource(first.id, for: .right)
         }

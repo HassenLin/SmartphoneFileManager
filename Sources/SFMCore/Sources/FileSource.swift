@@ -1,10 +1,13 @@
 import Foundation
 
-/// 檔案來源的識別。`deviceID` 為 Android serial／iPhone UDID／MTP 序號；Mac 為空字串。
+/// 檔案來源的識別。`deviceID` 為 Android serial／iPhone UDID／MTP 序號／網路帳號 id；Mac 為空字串。
 /// 同一台 Android 可同時以 adb 與 MTP 兩種來源出現（兩者序號不同）。
 /// 兩個窗格可以指向同一個來源（例如同一台 Android 的兩個資料夾）。
 public struct SourceID: Hashable, Sendable, Codable {
-    public enum Kind: String, Sendable, Codable { case mac, android, iphone, mtp }
+    public enum Kind: String, Sendable, Codable { case mac, android, iphone, mtp
+        /// 網路帳號（WebDAV／FTP／SFTP／pCloud）；協定由帳號設定決定，不在 Kind 區分
+        case network
+    }
 
     public let kind: Kind
     public let deviceID: String
@@ -18,6 +21,10 @@ public struct SourceID: Hashable, Sendable, Codable {
     public static func android(_ serial: String) -> SourceID { SourceID(kind: .android, deviceID: serial) }
     public static func iphone(_ udid: String) -> SourceID { SourceID(kind: .iphone, deviceID: udid) }
     public static func mtp(_ serial: String) -> SourceID { SourceID(kind: .mtp, deviceID: serial) }
+    public static func network(_ account: UUID) -> SourceID { SourceID(kind: .network, deviceID: account.uuidString) }
+
+    /// 網路帳號 id（非 `.network` 時為 nil）
+    public var networkAccountID: UUID? { kind == .network ? UUID(uuidString: deviceID) : nil }
 }
 
 /// 來源能力：UI 依此顯示／隱藏功能，而不是到處判斷來源型別
@@ -44,7 +51,8 @@ public struct SourceCapabilities: Sendable {
     }
 }
 
-/// 檔案來源的抽象介面：Mac 本機、Android（adb）、iPhone（AFC）、MTP（libmtp）四種實作。
+/// 檔案來源的抽象介面：Mac 本機、Android（adb）、iPhone（AFC）、MTP（libmtp）、
+/// 網路（WebDAV／FTP／SFTP／pCloud，見 `Network/`）。
 ///
 /// 契約：
 /// - 路徑一律為該來源內的絕對路徑；`target` 參數是**完整目的路徑**（含名稱），不是目錄。
