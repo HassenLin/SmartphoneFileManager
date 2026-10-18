@@ -124,7 +124,8 @@ tools/                        install.sh、make-app.sh、make-icon.swift、AppIc
 - `swift build` 零警告；`swift test` 92/92；實機整合測試（Palma Android + iPhone iOS 27）通過。
 - 網路實機測試（本機測試伺服器）通過：FTP 被動／主動、FTPS explicit／implicit、SFTP、WebDAV（http）——列表、上傳、下載、
   續傳上傳／下載、改名、資料夾上傳／下載、刪除、錯誤密碼。帳號清單與設定畫面已截圖確認。
-- **待驗收**：Synology WebDAV（https＋釘選憑證）實機、pCloud 美國／歐洲帳號實際登入（Email＋密碼、兩步驟驗證）、
+- **已實機驗證**：pCloud 歐洲帳號 Email＋密碼＋兩步驟驗證登入（自動由美國區改至歐洲區）。
+- **待驗收**：Synology WebDAV（https＋釘選憑證）實機、pCloud 美國區帳號登入、pCloud 檔案操作、
   網路帳號的 UI 端到端操作（新增帳號 → 開在窗格 → 拖放傳輸）。
 - 已截圖確認：左 iPhone／右 Android 雙窗格瀏覽。
 - 待手動驗收：UI 上的 ⌘C/⌘X/⌘V、拖放。
