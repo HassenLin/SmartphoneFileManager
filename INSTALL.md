@@ -27,7 +27,10 @@ xcode-select 指向 Command Line Tools 時自動改用已安裝的 Xcode；自�
 ./tools/make-app.sh release        # 產物：.build/SmartphoneFileManager.app
 ```
 
-- 首次開啟若被 Gatekeeper 擋：右鍵 → 打開（ad-hoc 簽章）。
+- 首次開啟若被 Gatekeeper 擋：右鍵 → 打開。
+- 簽章：自動挑鑰匙圈裡有效的「Apple Development」憑證（優先 team `34ZXLE998M`，可用 `SFM_SIGN_TEAM` 改），
+  或以 `SFM_SIGN_IDENTITY=<SHA-1｜名稱｜->` 指定（`-`＝ad-hoc）。ad-hoc 每次 build 身分都不同，
+  鑰匙圈裡的網路帳號密碼會在重新 build 後再詢問一次存取權限（選「永遠允許」）。
 - 螢幕鏡像：`brew install scrcpy`，或在 設定 → 螢幕鏡像 指定路徑。
 - adb 來源可在 設定 → ADB 切換（內附／自訂／系統 PATH・Homebrew・Android SDK）。
 - iPhone：接上、解鎖、點「信任這部電腦」；未安裝 libimobiledevice 時來源選單會提示。

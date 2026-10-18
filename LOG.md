@@ -1,5 +1,9 @@
 # LOG
 
+- 2026-10-18｜**`make-app.sh` 改用固定簽章身分：重新 build 不必再允許鑰匙圈存取**
+  - 回報「FTP 密碼沒存進鑰匙圈」：實際有存，是 ad-hoc 簽章每次 build 的 cdhash 不同，macOS 把新 build 視為別的 app 而要求重新允許。
+  - 改為優先用有效的 Apple Development 憑證簽章（濾掉已撤銷者；`SFM_SIGN_IDENTITY`／`SFM_SIGN_TEAM` 可指定），權限改綁 bundle id＋憑證；找不到才退回 ad-hoc。
+
 - 2026-10-18｜**從 Finder 拖檔案或資料夾到路徑列：開啟該 Mac 路徑**
   - `PathBar` 加 `dropDestination(for: URL.self)`（只收檔案網址，裝置／網路項目不受影響），放下時藍框提示。
   - `AppModel.openMacLocation`：窗格不是 Mac 時先切到這台 Mac；資料夾直接開啟，檔案開啟所在資料夾並選取。

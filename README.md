@@ -13,7 +13,7 @@
   `Media`（DCIM、Downloads、Books…）與 `Apps`（開啟檔案分享的 App 及其 Documents，等同 Finder 的「檔案」分頁）
 - **網路帳號**：WebDAV（https／http、自簽憑證可釘選）、FTP（純 FTP／FTPS explicit／FTPS implicit；被動／主動）、SFTP（密碼或私鑰）、
   pCloud（OAuth2，美國／歐洲資料中心）。FTP／FTPS／SFTP 需 `brew install lftp`；pCloud 需自行在 pCloud 註冊 App（設定 → 網路）
-- **發佈**：自用、ad-hoc 簽章、App Sandbox 關閉；**語系**：English／繁體中文／简体中文（跟隨系統語言）
+- **發佈**：自用、App Sandbox 關閉；簽章優先用鑰匙圈裡的 Apple Development 憑證（重新 build 不必再允許鑰匙圈存取），找不到才 ad-hoc；**語系**：English／繁體中文／简体中文（跟隨系統語言）
 - **安裝導引**：缺 adb、libimobiledevice、scrcpy 時於 app 內顯示步驟、官方下載連結與一鍵安裝指令（輔助說明 → 安裝導引）
 
 ## 畫面
