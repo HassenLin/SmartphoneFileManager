@@ -47,8 +47,10 @@ public struct PCloudSession: Sendable, Equatable {
 /// 流程（https://docs.pcloud.com/methods/intro/authentication.html）：
 /// 1. `getdigest` 取一次性 digest。
 /// 2. `passworddigest = sha1(密碼 + sha1(小寫 email) + digest)`——密碼本身不送出，digest 用過即失效，攔到也無法重放。
-/// 3. `userinfo?getauth=1` 換回長效 auth token。帳號啟用兩步驟驗證時回 2297＋暫時 token，
-///    須再以 `tfa_login`＋驗證碼換 auth（`PCloudLogin.verify`）。
+/// 3. `login?getauth=1` 換回長效 auth token。帳號啟用兩步驟驗證時回 2297＋暫時 token，
+///    須再以 `tfa_login`＋6 位數驗證碼換 auth（`PCloudLogin.verify`）。
+///    （官方文件未記載 2FA；作法依 pcloudcom/console-client PR #94 與 seborama/pcloud SDK：
+///    要用 `login` 而非 `userinfo`，並帶 `os`／`deviceid`，`trustdevice=1` 讓之後此裝置不必再輸入驗證碼。）
 /// 4. 地區：帳號只存在一區，在錯的區登入會失敗 → 先試使用者選的區，失敗再試另一區，成功的那區就是帳號地區。
 ///
 /// 只存 auth token（鑰匙圈），不存密碼；登出時呼叫 `logout` 讓 token 在伺服器端失效。
@@ -92,12 +94,12 @@ public enum PCloudLogin {
     private static func signIn(email: String, password: String, region: PCloudRegion) async throws -> PCloudSession {
         let digest = try await call("getdigest", [:], region: region)
         guard let nonce = digest.digest else { throw NetworkError.server("pCloud getdigest: unexpected response") }
-        let response = try await call("userinfo", [
-            "getauth": "1", "logout": "1", "username": email, "digest": nonce,
+        let response = try await call("login", deviceParameters.merging([
+            "username": email, "digest": nonce,
             "passworddigest": passwordDigest(email: email, password: password, digest: nonce),
-            "device": "Smartphone File Manager",
-        ], region: region, allowTwoFactor: true)
-        if response.result == twoFactorCode, let token = response.token {
+        ]) { $1 }, region: region, allowTwoFactor: true)
+        if response.result == twoFactorCode {
+            guard let token = response.token else { throw NetworkError.server("pCloud login: two-factor token missing") }
             throw TwoFactorRequired(token: token, region: region, email: email)
         }
         guard let auth = response.auth else { throw NetworkError.server("pCloud userinfo: no auth token") }
@@ -106,9 +108,9 @@ public enum PCloudLogin {
 
     /// 兩步驟驗證：以登入時拿到的暫時 token＋驗證碼（App 或簡訊）換 auth token
     public static func verify(_ pending: TwoFactorRequired, code: String) async throws -> PCloudSession {
-        let response = try await call("tfa_login", [
+        let response = try await call("tfa_login", deviceParameters.merging([
             "token": pending.token, "code": code.filter(\.isNumber), "trustdevice": "1",
-        ], region: pending.region)
+        ]) { $1 }, region: pending.region)
         guard let auth = response.auth else { throw NetworkError.server("pCloud tfa_login: no auth token") }
         return PCloudSession(token: PCloudToken(kind: .session, value: auth), region: pending.region, email: pending.email)
     }
@@ -117,6 +119,20 @@ public enum PCloudLogin {
     public static func signOut(_ token: PCloudToken, region: PCloudRegion) async {
         guard token.kind == .session else { return }
         _ = try? await call("logout", ["auth": token.value], region: region)
+    }
+
+    /// 登入與 2FA 共用：取得 auth、`os`＝6（macOS）、穩定的裝置 id（「信任此裝置」以它辨識）
+    private static var deviceParameters: [String: String] {
+        ["getauth": "1", "logout": "1", "os": "6", "device": "Smartphone File Manager", "deviceid": deviceID]
+    }
+
+    /// 以主機名稱雜湊出固定的裝置 id：同一台 Mac 每次登入都相同，不另存狀態。
+    /// 用 `gethostname` 而非 `ProcessInfo.hostName`：後者可能做反向 DNS 查詢而卡住數秒。
+    static var deviceID: String {
+        var buffer = [CChar](repeating: 0, count: 256)
+        gethostname(&buffer, buffer.count)
+        let host = String(decoding: buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
+        return String(sha1("Smartphone File Manager/" + host).prefix(32))
     }
 
     static func passwordDigest(email: String, password: String, digest: String) -> String {

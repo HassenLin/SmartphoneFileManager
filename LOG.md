@@ -6,6 +6,8 @@
   - `PCloudToken` 區分 session（`auth=` 參數）與 OAuth（Bearer）；鑰匙圈以 `session:` 前綴區分，舊 OAuth token 相容。
   - 帳號設定的 pCloud 區塊改為 Email／密碼／驗證碼；設定 → 網路 的 OAuth 標為選用，有填 Client ID 才顯示「用瀏覽器登入」。
   - 登出／刪帳號時呼叫 `logout` 作廢 token（複製出的帳號共用 token 時不作廢）。測試 93 項通過；尚未以實際 pCloud 帳號驗證。
+  - 修正：開了兩步驟驗證的帳號沒有出現驗證碼欄位 → 改用 `login` 方法並帶 `os`／`deviceid`（官方文件未記載，依 pcloudcom/console-client 與 seborama/pcloud SDK），
+    2297 時以 `tfa_login`＋6 位數驗證碼換 token，`trustdevice=1` 之後此 Mac 不必再輸入。
 
 - 2026-10-18｜**`make-app.sh` 改用固定簽章身分：重新 build 不必再允許鑰匙圈存取**
   - 回報「FTP 密碼沒存進鑰匙圈」：實際有存，是 ad-hoc 簽章每次 build 的 cdhash 不同，macOS 把新 build 視為別的 app 而要求重新允許。
