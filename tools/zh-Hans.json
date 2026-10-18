@@ -391,7 +391,6 @@
   "Not used" : "未使用",
   "Not yet known (remembered on first connection)" : "尚未记录（第一次连接时记住）",
   "Now: %@" : "当前：%@",
-  "Now: %@ and %lld more" : "当前：%1$@ 等另外 %2$lld 个",
   "OK" : "好",
   "Off = use the default from Settings → Network" : "不勾选＝沿用 设置 → 网络 的默认值",
   "On the Android phone" : "在 Android 手机上",

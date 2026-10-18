@@ -98,7 +98,7 @@ private struct JobRow: View {
                     if let jobETA { Text(jobETA).font(.caption.monospacedDigit()).foregroundStyle(.secondary) }
                     Text(stateText).font(.caption).foregroundStyle(job.state == .failed ? .red : .secondary)
                 }
-                if job.state == .running, let file = job.runningFiles.first { currentFileLine(file, count: job.runningFiles.count) }
+                if job.state == .running, let file = job.runningFile(queue.mainFiles[job.id]) { currentFileLine(file) }
                 if let message = job.message {
                     Text(message).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                 }
@@ -144,19 +144,18 @@ private struct JobRow: View {
                               : String(localized: "About \(time) left")
     }
 
-    /// 目前檔案：名稱、百分比、速率、剩餘時間（先有這一行，整體預估隨掃描逐步完整）。
-    /// 同時傳多個檔案時顯示第一個並註明共幾個；速率是全部的總和，單檔剩餘時間以平均分到的速率估算
-    private func currentFileLine(_ file: TransferNode, count: Int) -> some View {
+    /// 目前檔案：只顯示**主執行器**正在傳的檔案（子執行器的小檔來來去去，會讓這一行一直跳）。
+    /// 速率與剩餘時間只算主執行器自己（`mainRates`）；整個工作的總速率在上一行
+    private func currentFileLine(_ file: TransferNode) -> some View {
         let fraction = file.size > 0 ? min(1, Double(file.transferred) / Double(file.size)) : 0
+        let mainRate = queue.mainRates[job.id]
         var parts = [fraction.formatted(.percent.precision(.fractionLength(0)))]
-        if let speed = rate?.bytesPerSecond { parts.append("\(ByteFormat.string(Int64(speed)))/s") }
-        if let seconds = rate?.secondsRemaining(file.size - file.transferred) {
-            parts.append(String(localized: "\(DurationFormat.string(seconds * Double(count))) left"))
+        if let speed = mainRate?.bytesPerSecond { parts.append("\(ByteFormat.string(Int64(speed)))/s") }
+        if let seconds = mainRate?.secondsRemaining(file.size - file.transferred) {
+            parts.append(String(localized: "\(DurationFormat.string(seconds)) left"))
         }
         return HStack(spacing: 6) {
-            Text(count > 1 ? String(localized: "Now: \(file.name) and \(count - 1) more")
-                           : String(localized: "Now: \(file.name)"))
-                .lineLimit(1).truncationMode(.middle)
+            Text("Now: \(file.name)").lineLimit(1).truncationMode(.middle)
             Text(parts.joined(separator: " · ")).monospacedDigit()
         }
         .font(.caption).foregroundStyle(.secondary)

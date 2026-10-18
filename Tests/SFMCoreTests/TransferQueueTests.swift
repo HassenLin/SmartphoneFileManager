@@ -237,6 +237,28 @@ struct TransferQueueTests {
         #expect(store.maxActiveDownloads <= 3 && store.maxActiveDownloads > 1)
     }
 
+    @Test func currentFileTracksMainExecutorOnly() async throws {
+        let store = FakeStore()
+        store.directories.formUnion(["/a", "/a/dir"])
+        store.files["/a/dir/big.bin"] = Data(repeating: 1, count: 100)
+        for index in 0..<6 { store.files["/a/dir/s\(index).txt"] = Data("\(index)".utf8) }
+        var cloud = FakeSource(id: .network(UUID()), store: store, nativeCopy: false, delay: .milliseconds(80))
+        cloud.parallel = 3
+        cloud.threshold = 50
+        var other = FakeSource(id: .network(UUID()), store: FakeStore(), nativeCopy: false)
+        other.parallel = 3
+        other.store.directories.insert("/b")
+        let queue = makeQueue([cloud, other])
+        let id = try #require(queue.enqueue(.copy, items: [FileItem(path: "/a/dir", isDirectory: true, size: 0)],
+                                            from: cloud.id, to: other.id, directory: "/b"))
+        // 主執行器開始後，「目前」指向大檔；子執行器的小檔同時在傳也不會取代它
+        try await wait { queue.mainFiles[id] != nil }
+        let job = try #require(queue.job(id))
+        #expect(job.runningFile(queue.mainFiles[id])?.name == "big.bin")
+        _ = try await finished(queue, id)
+        #expect(queue.mainFiles[id] == nil && queue.mainRates[id] == nil)
+    }
+
     @Test func singleLaneIsMainExecutor() async throws {
         let store = FakeStore()
         store.directories.formUnion(["/a", "/a/dir"])

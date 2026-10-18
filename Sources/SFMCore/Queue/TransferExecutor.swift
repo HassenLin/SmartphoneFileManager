@@ -32,6 +32,8 @@ enum NodeEvent: Sendable {
     case retarget(UUID, path: String)
     /// 資料夾執行到時才列出的內容（佇列寫入樹並保存，繼續時不必重新列出）
     case expand(UUID, children: [TransferNode])
+    /// 主執行器開始傳這個檔案（工作列「目前」只顯示主執行器，不被子執行器的小檔干擾）
+    case mainFile(UUID)
 }
 
 /// 依工作樹逐節點執行（深度優先）。不持有狀態：每次繼續都以佇列保存的樹重新進入，
@@ -234,6 +236,7 @@ struct TransferExecutor: Sendable {
         }
 
         await report(.state(node.id, .running))
+        if lane == .main { await report(.mainFile(node.id)) }
         let size = node.size
         let progress: @Sendable (Double) -> Void = { [sink = self.progress, id = node.id] fraction in
             sink(id, Int64(Double(size) * min(1, max(0, fraction))))

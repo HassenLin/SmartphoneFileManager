@@ -217,6 +217,12 @@ public struct TransferJob: Codable, Sendable, Identifiable {
         allNodes.filter { $0.state == .running && $0.operation == .transferFile }
     }
 
+    /// 指定節點（主執行器正在傳的檔案）仍在傳輸中時回傳它
+    public func runningFile(_ id: UUID?) -> TransferNode? {
+        guard let id else { return nil }
+        return allNodes.first { $0.id == id && $0.state == .running }
+    }
+
     /// rsync 節點的結果摘要（Mac ↔ Mac 同步；其他工作為 nil）
     public var rsyncSummary: String? {
         let messages = allNodes.filter { $0.operation == .rsync }.compactMap(\.message)

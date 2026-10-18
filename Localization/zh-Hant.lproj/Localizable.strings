@@ -391,7 +391,6 @@
 "Not used" = "未使用";
 "Not yet known (remembered on first connection)" = "尚未記錄（第一次連線時記住）";
 "Now: %@" = "目前：%@";
-"Now: %@ and %lld more" = "目前：%1$@ 等另外 %2$lld 個";
 "OK" = "好";
 "Off = use the default from Settings → Network" = "不勾選＝沿用 設定 → 網路 的預設值";
 "On the Android phone" = "在 Android 手機上";
