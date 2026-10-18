@@ -8,18 +8,18 @@ enum ExecutorLane: Sendable {
     case sub
 }
 
-/// 主執行器與子執行器的名額（同一工作共用；佇列依同時傳輸數建立）
-struct ExecutorLanes: Sendable {
-    /// 主執行器：一次一個大檔，下載一律多條連線
-    let main: TransferSlots
-    /// 子執行器：小檔，同時傳輸數 − 1 個，各一條連線
-    let sub: TransferSlots
+/// 主執行器＋子執行器的組態（佇列依同時傳輸數建立；實際分派見 `TransferDispatcher`）。
+///
+/// **只用於雲端（網路帳號）**：只有網路帳號的同時傳輸數可以 > 1（Mac 與手機的 `maxParallelTransfers` 固定 1），
+/// 所以涉及手機或只有 Mac 的工作不會建立，維持逐檔。
+struct ExecutorLanes: Sendable, Equatable {
+    /// 子執行器數（同時傳輸數 − 1）；主執行器固定 1 個
+    let subCount: Int
 
     /// 同時傳輸數 < 2 時為 nil（逐檔，唯一的執行器即主執行器）
     init?(parallelTransfers: Int) {
         guard parallelTransfers >= 2 else { return nil }
-        main = TransferSlots(1)
-        sub = TransferSlots(parallelTransfers - 1)
+        subCount = parallelTransfers - 1
     }
 }
 
@@ -42,8 +42,9 @@ enum NodeEvent: Sendable {
 /// 取消（暫停／停止／關閉 app）：正在傳的檔案標為 `partial` 並保留不完整內容，再往上拋 `CancellationError`；
 /// 停止時由佇列負責清除這些不完整內容。其他錯誤只讓該節點失敗，繼續處理其餘節點。
 ///
-/// **主執行器／子執行器**（網路帳號「同時傳輸數」≥ 2 時，見 `ExecutorLanes`）：遍歷樹時依檔案大小分流——
-/// 達到大檔門檻的交給**主執行器**（一次一個）、其餘交給**子執行器**（同時傳輸數 − 1 個）。
+/// **主執行器／子執行器**（只用於雲端：網路帳號「同時傳輸數」≥ 2 時，見 `ExecutorLanes`、`TransferDispatcher`）：
+/// 遍歷樹時依檔案大小分流——達到大檔門檻的交給**主執行器**（一次一個）、其餘交給**子執行器**（同時傳輸數 − 1 個）。
+/// 子執行器沒有小檔時也會取大檔；主執行器空下來且沒有大檔排隊時，接手子執行器正在下載的大檔以多連線續傳。
 /// **主執行器一律多連線下載**（帳號選項「大檔同時連線數」），子執行器一律單一連線——連線數由執行器決定，不看檔案大小。
 /// 逐檔（同時傳輸數 1）時唯一的那個就是主執行器：每個檔案都以多連線下載。
 struct TransferExecutor: Sendable {
@@ -63,8 +64,10 @@ struct TransferExecutor: Sendable {
     var twoWay = false
     /// 本執行器是否為反方向節點而對調了來源／目的（避免反方向節點再次對調）
     var isSwapped = false
-    /// 主／子執行器的名額（nil＝逐檔）。同時傳輸數 ≥ 2 時由佇列建立，整個工作共用
+    /// 主／子執行器組態（nil＝逐檔）。同時傳輸數 ≥ 2 時由佇列設定
     var lanes: ExecutorLanes? = nil
+    /// 執行中的分派器（`run` 建立，整個工作共用；反方向的執行器沿用同一個）
+    var dispatcher: TransferDispatcher? = nil
 
     /// 大檔門檻：涉及的非 Mac 來源中最小者（Mac 與裝置沒有門檻 → 不分大小檔）
     private var largeThreshold: Int64? {
@@ -81,48 +84,94 @@ struct TransferExecutor: Sendable {
         guard let destination else { return nil }
         return TransferExecutor(jobID: jobID, source: destination, destination: source, staging: staging,
                                 report: report, progress: progress, ask: ask, options: options, twoWay: twoWay, isSwapped: true,
-                                lanes: lanes)
+                                lanes: lanes, dispatcher: dispatcher)
     }
 
     func run(_ nodes: [TransferNode]) async throws {
-        _ = try await runLevel(nodes)
+        guard let lanes else {
+            _ = try await runLevel(nodes)
+            return
+        }
+        // 遍歷（生產者）＋ 1 個主執行器 ＋ N−1 個子執行器，共用一個分派器
+        let dispatcher = TransferDispatcher(subCount: lanes.subCount)
+        let executor = { var copy = self; copy.dispatcher = dispatcher; return copy }()
+        try await withTaskCancellationHandler {
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                group.addTask {
+                    _ = try await executor.runLevel(nodes)
+                    await dispatcher.finish()
+                }
+                group.addTask { try await executor.work(.main, dispatcher) }
+                for _ in 0..<lanes.subCount { group.addTask { try await executor.work(.sub, dispatcher) } }
+                do {
+                    for try await _ in group {}
+                } catch {
+                    // 等待中的成員不會自己醒來：先全部喚醒（拋取消），群組才能結束
+                    await dispatcher.cancelAll()
+                    throw error
+                }
+            }
+        } onCancel: {
+            Task { await dispatcher.cancelAll() }
+        }
+    }
+
+    /// 工作者迴圈：向分派器取檔案、執行、回報結果
+    private func work(_ lane: ExecutorLane, _ dispatcher: TransferDispatcher) async throws {
+        while let item = try await dispatcher.next(lane) {
+            let node = item.node
+            if lane == .main {
+                await dispatcher.complete(item, try await runNode(node, on: .main))
+                continue
+            }
+            // 子執行器：放在可單獨取消的工作裡跑，主執行器接手時只停這個檔案
+            let task = Task { try await runNode(node, on: .sub) }
+            await dispatcher.started(item) { task.cancel() }
+            do {
+                let state = try await withTaskCancellationHandler { try await task.value } onCancel: { task.cancel() }
+                await dispatcher.complete(item, state)
+            } catch is CancellationError where !Task.isCancelled {
+                // 不是整個工作被取消，而是主執行器接手：進度已存為 partial，交出去後繼續取下一個
+                guard await dispatcher.handOff(item) else { throw CancellationError() }
+            }
+        }
     }
 
     /// 執行同一層的節點，回傳是否全部完成（`.done`；略過也算未完成，移動時父資料夾據此保留來源）。
     ///
-    /// 逐檔時依序執行。有主／子執行器時，檔案依大小分流後在背景傳，遍歷繼續往下；其他節點（資料夾、刪除、改名…）
-    /// 依序在這裡執行，子層的檔案同樣向共用名額排隊。本層結束前等所有背景檔案完成，父資料夾才判斷能否刪除來源。
-    /// - 小檔：先取得子執行器名額才建立工作（遍歷在這裡等，背景工作數量有上限）。
-    /// - 大檔：立即建立工作、在工作內等主執行器——大檔排隊時不擋住後面的小檔。
+    /// 逐檔時依序執行。有主／子執行器時，檔案依大小送進分派器、在背景傳，遍歷繼續往下；其他節點（資料夾、刪除、改名…）
+    /// 依序在這裡執行。本層結束前等這一層送出的檔案都完成，父資料夾才判斷能否刪除來源。
     private func runLevel(_ nodes: [TransferNode]) async throws -> Bool {
-        guard let lanes else {
-            var allDone = true
+        var allDone = true
+        guard let dispatcher else {
             for node in nodes {
                 try Task.checkCancellation()
                 if try await runNode(node, on: .main) != .done { allDone = false }
             }
             return allDone
         }
-        return try await withThrowingTaskGroup(of: NodeState.self) { group in
-            var allDone = true
-            for node in nodes {
-                try Task.checkCancellation()
-                let finished = node.state == .done || node.state == .skipped
-                if node.operation == .transferFile && !finished {
-                    if isLarge(node) {
-                        group.addTask { try await lanes.main.run { try await runNode(node, on: .main) } }
-                    } else {
-                        try await lanes.sub.acquire()
-                        group.addTask { try await lanes.sub.runAcquired { try await runNode(node, on: .sub) } }
-                    }
-                } else if try await runNode(node, on: .main) != .done {
-                    allDone = false
-                }
+        var submitted: [UUID] = []
+        for node in nodes {
+            try Task.checkCancellation()
+            let finished = node.state == .done || node.state == .skipped
+            if node.operation == .transferFile && !finished {
+                submitted.append(try await dispatcher.submit(node, large: isLarge(node), handoffable: isDownloadToMac(node)))
+            } else if try await runNode(node, on: .main) != .done {
+                allDone = false
             }
-            // 任一檔案拋出取消時，這裡重新拋出，TaskGroup 隨即取消其餘檔案（各自標為 partial）
-            for try await state in group where state != .done { allDone = false }
-            return allDone
         }
+        for id in submitted where try await dispatcher.result(id) != .done { allDone = false }
+        return allDone
+    }
+
+    /// 這個檔案是否「從網路下載到 Mac」——只有這種才值得交給主執行器接手（上傳一律單一連線；
+    /// 經 Mac 中繼的檔案在上傳階段被打斷，pCloud 等不能續傳上傳的來源會整份重傳）
+    private func isDownloadToMac(_ node: TransferNode) -> Bool {
+        let reversed = node.reversed == true && !isSwapped
+        let from = reversed ? destination : source
+        let to: (any FileSource)? = reversed ? source : destination
+        guard let from, let to else { return false }
+        return from.id.kind != .mac && to.id.kind == .mac && from.largeFileConnections > 1
     }
 
     /// 回傳節點最終狀態（父資料夾據此決定移動時能否刪除來源）

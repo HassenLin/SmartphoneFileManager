@@ -17,6 +17,10 @@ final class FakeStore: @unchecked Sendable {
     var activeLarge = 0
     var maxActiveLarge = 0
     var connections: [String: Int] = [:]
+    /// 每個檔案每次下載收到的連線數（接手時會是 [1, 4]）
+    var connectionHistory: [String: [Int]] = [:]
+    /// 個別檔案的下載延遲（覆寫 FakeSource.delay）
+    var delays: [String: Duration] = [:]
 
     func with<T>(_ body: (FakeStore) throws -> T) rethrows -> T {
         lock.lock(); defer { lock.unlock() }
@@ -42,6 +46,7 @@ struct FakeSource: FileSource {
                         onProgress: @escaping @Sendable (Double) -> Void) async throws {
         store.with { s in
             s.connections[path] = connections
+            s.connectionHistory[path, default: []].append(connections)
             if connections > 1 { s.activeLarge += 1; s.maxActiveLarge = max(s.maxActiveLarge, s.activeLarge) }
         }
         defer { if connections > 1 { store.with { $0.activeLarge -= 1 } } }
@@ -89,7 +94,7 @@ struct FakeSource: FileSource {
             s.maxActiveDownloads = max(s.maxActiveDownloads, s.activeDownloads)
         }
         defer { store.with { $0.activeDownloads -= 1 } }
-        try await Task.sleep(for: delay)
+        try await Task.sleep(for: store.with { $0.delays[path] } ?? delay)
         let (dirs, files) = store.with { s in
             (s.directories.filter { $0 == path || $0.hasPrefix(path + "/") },
              s.files.filter { $0.key == path || $0.key.hasPrefix(path + "/") })

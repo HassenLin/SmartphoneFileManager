@@ -259,6 +259,50 @@ struct TransferQueueTests {
         #expect(queue.mainFiles[id] == nil && queue.mainRates[id] == nil)
     }
 
+    @Test func subExecutorsTakeLargeFilesWhenNoSmallOnes() async throws {
+        let store = FakeStore()
+        store.directories.formUnion(["/a", "/a/dir"])
+        for index in 0..<3 { store.files["/a/dir/big\(index).bin"] = Data(repeating: 1, count: 100) }
+        var cloud = FakeSource(id: .network(UUID()), store: store, nativeCopy: false, delay: .milliseconds(100))
+        cloud.parallel = 3
+        cloud.threshold = 50
+        var other = FakeSource(id: .network(UUID()), store: FakeStore(), nativeCopy: false)
+        other.parallel = 3
+        other.store.directories.insert("/b")
+        let queue = makeQueue([cloud, other])
+        let job = try await finished(queue, queue.enqueue(.copy, items: [FileItem(path: "/a/dir", isDirectory: true, size: 0)],
+                                                          from: cloud.id, to: other.id, directory: "/b"))
+        #expect(job.state == .completed && other.store.files.count == 3)
+        // 沒有小檔：主執行器 1 個大檔（多連線）＋ 子執行器各取 1 個大檔（單一連線），三個同時
+        #expect(store.maxActiveDownloads == 3 && store.maxActiveLarge == 1)
+        #expect(store.connections.values.sorted() == [1, 1, 4])
+    }
+
+    @Test func mainExecutorTakesOverLargeDownloadFromSub() async throws {
+        let store = FakeStore()
+        store.directories.formUnion(["/a", "/a/dir"])
+        store.files["/a/dir/big0.bin"] = Data(repeating: 1, count: 100)
+        store.files["/a/dir/big1.bin"] = Data(repeating: 2, count: 100)
+        store.delays["/a/dir/big0.bin"] = .milliseconds(60)       // 主執行器很快做完 big0
+        store.delays["/a/dir/big1.bin"] = .milliseconds(400)      // 子執行器在跑的 big1 還很久
+        var cloud = FakeSource(id: .network(UUID()), store: store, nativeCopy: false)
+        cloud.parallel = 2
+        cloud.threshold = 50
+        let mac = MacFileSource()
+        let target = FileManager.default.temporaryDirectory.appendingPathComponent("sfm-handoff-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: target) }
+        let queue = makeQueue([cloud, mac])
+        let job = try await finished(queue, queue.enqueue(.copy, items: [FileItem(path: "/a/dir", isDirectory: true, size: 0)],
+                                                          from: cloud.id, to: mac.id, directory: target.path))
+        #expect(job.state == .completed)
+        // big1 先由子執行器單一連線下載，主執行器空下來後接手以多連線續傳
+        #expect(store.connectionHistory["/a/dir/big1.bin"] == [1, 4])
+        #expect(store.connectionHistory["/a/dir/big0.bin"] == [4])
+        #expect(try Data(contentsOf: target.appendingPathComponent("dir/big1.bin")) == Data(repeating: 2, count: 100))
+        #expect(!job.allNodes.contains { $0.state == .failed || $0.state == .partial })
+    }
+
     @Test func singleLaneIsMainExecutor() async throws {
         let store = FakeStore()
         store.directories.formUnion(["/a", "/a/dir"])
