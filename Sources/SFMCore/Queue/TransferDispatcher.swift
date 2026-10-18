@@ -7,6 +7,8 @@ import Foundation
 ///   都沒有時，**接手**子執行器正在跑的大檔（請子執行器停下、保留進度，主執行器以多連線續傳）→ 再沒有才取小檔。
 /// - **子執行器**（同時傳輸數 − 1 個）：一律單一連線，**小檔優先**。取工作順序：小檔 → 沒有小檔時取排隊中的大檔
 ///   （主執行器正在忙；之後主執行器空下來會把它接過去）。
+///   「沒有小檔」必須是**遍歷已停下**（全部結束，或正在等這一層的結果）：遍歷還在送檔案、展開資料夾時，
+///   小檔佇列暫時是空的不代表沒有小檔——同一層排在大檔後面的小檔、子資料夾裡的小檔馬上就會送進來。
 ///
 /// 遍歷樹的一方（`TransferExecutor.runLevel`）是生產者：`submit` 送出檔案、`result` 等結果。
 /// 小檔佇列有上限（子執行器數），滿了生產者就等——資料夾才不會被一口氣全部展開。
@@ -47,6 +49,8 @@ actor TransferDispatcher {
     private var producerWaiter: CheckedContinuation<Void, Error>?
     /// 遍歷結束、不會再有新檔案
     private var finished = false
+    /// 遍歷正在等結果（這段時間不會送出新檔案）
+    private var producerWaiting = false
     private var cancelled = false
 
     init(subCount: Int) { self.subCount = max(1, subCount) }
@@ -71,7 +75,11 @@ actor TransferDispatcher {
     func result(_ id: UUID) async throws -> NodeState {
         try checkCancelled()
         if let state = results[id] { return state }
-        return try await withCheckedThrowingContinuation { resultWaiters[id] = $0 }
+        return try await withCheckedThrowingContinuation { continuation in
+            resultWaiters[id] = continuation
+            producerWaiting = true
+            dispatch()
+        }
     }
 
     /// 遍歷結束：工作者做完手上的就離開
@@ -101,7 +109,10 @@ actor TransferDispatcher {
         runningOnSub[item.id] = nil
         if handoffInFlight == item.id { handoffInFlight = nil }
         results[item.id] = state
-        resultWaiters.removeValue(forKey: item.id)?.resume(returning: state)
+        if let waiter = resultWaiters.removeValue(forKey: item.id) {
+            producerWaiting = false          // 遍歷醒來後可能繼續送出檔案
+            waiter.resume(returning: state)
+        }
         dispatch()
     }
 
@@ -159,8 +170,8 @@ actor TransferDispatcher {
         while !subWaiters.isEmpty {
             if !small.isEmpty {
                 subWaiters.removeFirst().resume(returning: small.removeFirst())
-            } else if !large.isEmpty && mainWaiter == nil {
-                // 沒有小檔：取大檔（主執行器在忙；空著的話上面已經先給主執行器）
+            } else if !large.isEmpty && mainWaiter == nil && (finished || producerWaiting) {
+                // 真的沒有小檔（遍歷已停下）：取大檔（主執行器在忙；空著的話上面已經先給主執行器）
                 let item = large.removeFirst()
                 runningOnSub[item.id] = item
                 subWaiters.removeFirst().resume(returning: item)

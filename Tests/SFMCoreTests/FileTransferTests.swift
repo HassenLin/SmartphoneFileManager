@@ -21,6 +21,8 @@ final class FakeStore: @unchecked Sendable {
     var connectionHistory: [String: [Int]] = [:]
     /// 個別檔案的下載延遲（覆寫 FakeSource.delay）
     var delays: [String: Duration] = [:]
+    /// 下載開始的順序（路徑、連線數）
+    var startLog: [(String, Int)] = []
 
     func with<T>(_ body: (FakeStore) throws -> T) rethrows -> T {
         lock.lock(); defer { lock.unlock() }
@@ -47,6 +49,7 @@ struct FakeSource: FileSource {
         store.with { s in
             s.connections[path] = connections
             s.connectionHistory[path, default: []].append(connections)
+            s.startLog.append((path, connections))
             if connections > 1 { s.activeLarge += 1; s.maxActiveLarge = max(s.maxActiveLarge, s.activeLarge) }
         }
         defer { if connections > 1 { store.with { $0.activeLarge -= 1 } } }
