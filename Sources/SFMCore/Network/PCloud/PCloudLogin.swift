@@ -71,24 +71,31 @@ public enum PCloudLogin {
         let email: String?
     }
 
-    /// 2297：需要兩步驟驗證；2000：帳密錯誤（在錯的地區登入也回這個）
+    /// 2297：需要兩步驟驗證
     static let twoFactorCode = 2297
+    /// 2321：「This user is on another location」——帳號在另一個資料中心，換另一區重試
+    static let wrongLocationCode = 2321
+    private struct WrongLocation: Error {}
 
     public static func signIn(email: String, password: String, preferredRegion: PCloudRegion) async throws -> PCloudSession {
         let email = email.trimmingCharacters(in: .whitespaces)
         guard !email.isEmpty, !password.isEmpty else { throw NetworkError.missingCredential }
         let regions = [preferredRegion] + PCloudRegion.allCases.filter { $0 != preferredRegion }
-        var lastError: Error = NetworkError.authenticationFailed("pCloud")
+        // 兩區都失敗時優先回報「帳密錯誤」（來自帳號所在的那區），而不是另一區的「不在此區」
+        var authError: NetworkError?
         for region in regions {
             do {
                 return try await signIn(email: email, password: password, region: region)
+            } catch is WrongLocation {
+                // 帳號不在這區（2321）→ 換另一區
+                continue
             } catch let error as NetworkError {
-                // 帳密錯或帳號不在這區（兩者 pCloud 回同一個錯誤碼）→ 換另一區；其他錯誤（連不上等）直接回報
+                // 帳密錯誤（有時在錯的區也回這個）→ 也試另一區；其他錯誤（連不上等）直接回報
                 guard case .authenticationFailed = error else { throw error }
-                lastError = error
+                authError = error
             }
         }
-        throw lastError
+        throw authError ?? NetworkError.authenticationFailed("pCloud: account not found in either region")
     }
 
     private static func signIn(email: String, password: String, region: PCloudRegion) async throws -> PCloudSession {
@@ -162,6 +169,7 @@ public enum PCloudLogin {
             throw NetworkError.server("pCloud \(method): unexpected response")
         }
         if response.result == 0 || (allowTwoFactor && response.result == twoFactorCode) { return response }
+        if response.result == wrongLocationCode { throw WrongLocation() }
         throw PCloudClient.error(response.result, response.error ?? "", method: method)
     }
 }
