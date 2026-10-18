@@ -1,5 +1,12 @@
 # LOG
 
+- 2026-10-18｜**pCloud 改為 Email＋密碼登入（不需註冊 pCloud App）**
+  - 原本只能 OAuth，須先在 pCloud 註冊 App 取得 Client ID／Secret 並等核准。新增 `PCloudLogin`：`getdigest`＋`passworddigest`
+    （密碼不送出、不儲存）換 auth token；兩步驟驗證（2297 → `tfa_login`）；先試選定地區、失敗再試另一區，自動判定美國／歐洲。
+  - `PCloudToken` 區分 session（`auth=` 參數）與 OAuth（Bearer）；鑰匙圈以 `session:` 前綴區分，舊 OAuth token 相容。
+  - 帳號設定的 pCloud 區塊改為 Email／密碼／驗證碼；設定 → 網路 的 OAuth 標為選用，有填 Client ID 才顯示「用瀏覽器登入」。
+  - 登出／刪帳號時呼叫 `logout` 作廢 token（複製出的帳號共用 token 時不作廢）。測試 93 項通過；尚未以實際 pCloud 帳號驗證。
+
 - 2026-10-18｜**`make-app.sh` 改用固定簽章身分：重新 build 不必再允許鑰匙圈存取**
   - 回報「FTP 密碼沒存進鑰匙圈」：實際有存，是 ad-hoc 簽章每次 build 的 cdhash 不同，macOS 把新 build 視為別的 app 而要求重新允許。
   - 改為優先用有效的 Apple Development 憑證簽章（濾掉已撤銷者；`SFM_SIGN_IDENTITY`／`SFM_SIGN_TEAM` 可指定），權限改綁 bundle id＋憑證；找不到才退回 ad-hoc。

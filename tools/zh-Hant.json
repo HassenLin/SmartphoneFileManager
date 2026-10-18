@@ -651,5 +651,14 @@
 "lftp is not installed (needed for FTP, FTPS and SFTP accounts)": "lftp 未安裝（FTP、FTPS、SFTP 帳號需要）",
 "lftp website": "lftp 官網",
 "nas.local or 192.168.1.10": "nas.local 或 192.168.1.10",
-"pCloud sign-in": "pCloud 登入"
+"pCloud sign-in": "pCloud 登入",
+"Email": "Email",
+"Enter the code from your authenticator app or text message.": "輸入驗證 App 或簡訊收到的驗證碼。",
+"Not needed: pCloud accounts sign in with email and password. Fill this in only to sign in through the browser (OAuth) with your own pCloud app — add the redirect URI above to it. The secret is kept in the login keychain.": "一般不需要：pCloud 帳號直接以 Email 與密碼登入。只有想用自己註冊的 pCloud App 透過瀏覽器（OAuth）登入時才填，並把上方的 redirect URI 加進該 App。Secret 存於登入鑰匙圈。",
+"Sign In": "登入",
+"Sign In with Browser…": "用瀏覽器登入…",
+"The password is only used to sign in; just the sign-in token is kept in the login keychain.": "密碼只用來登入，不會儲存；登入鑰匙圈只保存登入憑證（token）。",
+"Verification code": "驗證碼",
+"Verify": "驗證",
+"pCloud browser sign-in (optional)": "pCloud 瀏覽器登入（選用）"
 }

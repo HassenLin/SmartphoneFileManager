@@ -24,7 +24,7 @@ public enum NetworkSourceFactory {
             guard let lftp = FTPFileSource.locateTool() else { throw NetworkError.lftpMissing }
             return FTPFileSource(account: account, password: secret, options: options, executable: lftp)
         case .pcloud:
-            return PCloudFileSource(account: account, token: secret, options: options)
+            return PCloudFileSource(account: account, token: PCloudToken(keychainValue: secret), options: options)
         }
     }
 
@@ -41,7 +41,7 @@ public enum NetworkSourceFactory {
 
 public extension NetworkSourceFactory {
     /// pCloud 登入後查帳號 email（帳號清單顯示用）
-    static func pcloudEmail(token: String, region: PCloudRegion, options: ConnectionOptions.Resolved) async throws -> String? {
+    static func pcloudEmail(token: PCloudToken, region: PCloudRegion, options: ConnectionOptions.Resolved) async throws -> String? {
         try await PCloudClient(region: region, token: token, options: options).userEmail()
     }
 }

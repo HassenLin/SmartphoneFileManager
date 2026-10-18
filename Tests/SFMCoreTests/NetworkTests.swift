@@ -138,8 +138,19 @@ struct PCloudTests {
         #expect(date == Date(timeIntervalSince1970: 1_363_890_717))
     }
 
+    @Test func tokenKindsAndDigest() {
+        let session = PCloudToken(kind: .session, value: "abc")
+        #expect(session.keychainValue == "session:abc")
+        #expect(PCloudToken(keychainValue: "session:abc") == session)
+        #expect(PCloudToken(keychainValue: "legacy").kind == .oauth)   // 舊版存的 OAuth token 沒有前綴
+        // email 不分大小寫
+        #expect(PCloudLogin.passwordDigest(email: "Me@X.com", password: "pw", digest: "d")
+                == PCloudLogin.passwordDigest(email: "me@x.com", password: "pw", digest: "d"))
+        #expect(PCloudLogin.passwordDigest(email: "me@x.com", password: "pw", digest: "d").count == 40)
+    }
+
     @Test func plusSignIsEncoded() {
-        let client = PCloudClient(region: .eu, token: "t", options: .standard)
+        let client = PCloudClient(region: .eu, token: PCloudToken(kind: .oauth, value: "t"), options: .standard)
         let url = client.url("stat", ["path": "/a+b c.txt"])
         #expect(url.host == "eapi.pcloud.com")
         #expect(url.absoluteString.contains("a%2Bb%20c.txt"))

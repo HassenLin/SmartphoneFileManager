@@ -35,8 +35,9 @@ xcode-select 指向 Command Line Tools 時自動改用已安裝的 Xcode；自�
 - adb 來源可在 設定 → ADB 切換（內附／自訂／系統 PATH・Homebrew・Android SDK）。
 - iPhone：接上、解鎖、點「信任這部電腦」；未安裝 libimobiledevice 時來源選單會提示。
 - 網路帳號：「檔案 → 網路帳號…」新增。FTP／SFTP 需 `brew install lftp`。
-- pCloud：到 https://docs.pcloud.com/my_apps/ 建立 App，把 Redirect URI `http://127.0.0.1:53682/` 加入允許清單，
-  在 設定 → 網路 填 Client ID 與 Secret（Secret 存鑰匙圈）；同一個 App 可登入美國與歐洲帳號，地區於登入時自動判定。
+- pCloud：帳號設定直接以 Email＋密碼登入（不需註冊 App；有兩步驟驗證時再輸入驗證碼），地區自動判定；鑰匙圈只存登入 token。
+  選用：想用 OAuth 瀏覽器登入，到 https://docs.pcloud.com/my_apps/ 建立 App（須等 pCloud 核准），把 Redirect URI
+  `http://127.0.0.1:53682/` 加入允許清單，在 設定 → 網路 填 Client ID 與 Secret。
 - 新增/修改 UI 字串後：在 `tools/zh-Hant.json` 補繁中翻譯，執行 `python3 tools/gen-strings.py`（簡中自動產生；不滿意的寫進 `tools/zh-Hans.overrides.json`）。
   擷取全部鍵：`swift build -Xswiftc -emit-localized-strings -Xswiftc -emit-localized-strings-path -Xswiftc <dir>`，
   再以 `--check <keys.json>` 檢查缺漏。

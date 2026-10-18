@@ -205,6 +205,7 @@
 "Duplicate" = "複製";
 "Edit Account…" = "編輯帳號…";
 "Edit as Text" = "以文字編輯";
+"Email" = "Email";
 "Empty folder" = "空資料夾";
 "Enable" = "啟用";
 "Enable TCP/IP on USB Device" = "對 USB 裝置啟用 TCP/IP";
@@ -214,6 +215,7 @@
 "Encrypted" = "已加密";
 "Encryption" = "加密";
 "Enter only the host name or IP address (no scheme or path)." = "只填主機名稱或 IP 位址（不含 https:// 等開頭與路徑）。";
+"Enter the code from your authenticator app or text message." = "輸入驗證 App 或簡訊收到的驗證碼。";
 "Entering device shell...\n" = "正在進入裝置 shell…\n";
 "Error" = "錯誤";
 "Europe" = "歐洲";
@@ -377,6 +379,7 @@
 "Not enough space at the destination: needs %@, only %@ available" = "目的地空間不足：需要 %1$@，只剩 %2$@";
 "Not found — see Help → Setup Guide" = "找不到——請見 輔助說明 → 安裝導引";
 "Not found: %@" = "找不到：%@";
+"Not needed: pCloud accounts sign in with email and password. Fill this in only to sign in through the browser (OAuth) with your own pCloud app — add the redirect URI above to it. The secret is kept in the login keychain." = "一般不需要：pCloud 帳號直接以 Email 與密碼登入。只有想用自己註冊的 pCloud App 透過瀏覽器（OAuth）登入時才填，並把上方的 redirect URI 加進該 App。Secret 存於登入鑰匙圈。";
 "Not signed in" = "尚未登入";
 "Not used" = "未使用";
 "Not yet known (remembered on first connection)" = "尚未記錄（第一次連線時記住）";
@@ -513,7 +516,9 @@
 "Show password" = "顯示密碼";
 "Shut Down" = "關機";
 "Shut Down iPhone" = "將 iPhone 關機";
+"Sign In" = "登入";
 "Sign In Again…" = "重新登入…";
+"Sign In with Browser…" = "用瀏覽器登入…";
 "Sign In with pCloud…" = "使用 pCloud 登入…";
 "Sign Out" = "登出";
 "Sign in with pCloud in the account settings." = "請在帳號設定中使用 pCloud 登入。";
@@ -563,6 +568,7 @@
 "The bundled adb is missing from this build. Rebuild with tools/make-app.sh, or use option 2 or 3." = "此版本缺少內附的 adb。請以 tools/make-app.sh 重新建置，或改用方式二、三。";
 "The destination is not available" = "目的地無法使用";
 "The file cannot be decoded as %@." = "此檔案無法以 %@ 解碼。";
+"The password is only used to sign in; just the sign-in token is kept in the login keychain." = "密碼只用來登入，不會儲存；登入鑰匙圈只保存登入憑證（token）。";
 "The saved password or sign-in is removed from the keychain." = "儲存的密碼或登入資訊會從鑰匙圈移除。";
 "The server certificate is not trusted." = "伺服器憑證不受信任。";
 "The sign-in response did not match this request." = "登入回應與此次請求不符。";
@@ -602,6 +608,8 @@
 "Use after the server was reinstalled or its key changed" = "伺服器重灌或更換金鑰後使用";
 "Used" = "已使用";
 "User name" = "使用者名稱";
+"Verification code" = "驗證碼";
+"Verify" = "驗證";
 "Verify server certificate" = "驗證伺服器憑證";
 "Version" = "版本";
 "Voltage" = "電壓";
@@ -641,6 +649,7 @@
 "macOS has no public API for iPhone files. This app uses the open-source libimobiledevice (the same AFC services Finder uses): “Media” shows DCIM, Downloads, Books…; “Apps” shows the apps that share documents, like the Files tab in Finder." = "macOS 沒有存取 iPhone 檔案的公開 API。本 App 使用開源的 libimobiledevice（與 Finder 相同的 AFC 服務）：「Media」為 DCIM、Downloads、Books…；「Apps」為可分享文件的 App，與 Finder 的「檔案」分頁相同。";
 "macOS privacy protection blocks this folder. Choose it in the open panel to grant access, or allow it in System Settings → Privacy & Security → Files and Folders." = "此資料夾受 macOS 隱私保護。請用「選擇資料夾…」在開啟面板中選取以授權，或到 系統設定 → 隱私權與安全性 → 檔案與資料夾 允許存取。";
 "nas.local or 192.168.1.10" = "nas.local 或 192.168.1.10";
+"pCloud browser sign-in (optional)" = "pCloud 瀏覽器登入（選用）";
 "pCloud sign-in" = "pCloud 登入";
 "rsync (Mac ↔ Mac)" = "rsync（Mac ↔ Mac）";
 "rsync: %lld file(s) updated, %lld item(s) deleted" = "rsync：更新 %1$lld 個檔案、刪除 %2$lld 個項目";

@@ -56,7 +56,7 @@ final class AccountStore {
             $0.id != account.id && $0.protocol != .pcloud && !Self.keychainKeyChanged($0, account)
         }
         if !sharesPassword { CredentialStore.deletePassword(for: account) }
-        CredentialStore.deletePCloudToken(for: account)
+        if account.protocol == .pcloud { signOutPCloud(account) }
         try mutate { $0.accounts.removeAll { $0.id == account.id } }
     }
 
@@ -88,17 +88,26 @@ final class AccountStore {
         try mutate { $0.pcloudClientID = id.trimmingCharacters(in: .whitespaces) }
     }
 
-    /// pCloud 登入成功：存 token、更新地區與 email
-    func savePCloudSignIn(_ result: PCloudOAuth.Result, email: String?, for account: NetworkAccount) throws -> NetworkAccount {
-        CredentialStore.setPCloudToken(result.token, for: account)
+    /// pCloud 登入成功（帳號密碼或 OAuth）：存 token、更新地區與 email
+    func savePCloudSignIn(_ session: PCloudSession, for account: NetworkAccount) throws -> NetworkAccount {
+        CredentialStore.setPCloudToken(session.token.keychainValue, for: account)
         var updated = account
-        updated.pcloudRegion = result.region
-        if let email { updated.username = email }
+        updated.pcloudRegion = session.region
+        if let email = session.email { updated.username = email }
         if library.account(account.id) != nil { try save(updated, password: nil) } else { bump() }
         return updated
     }
 
+    /// 登出：刪鑰匙圈的 token；帳號密碼登入的 token 另請伺服器作廢——
+    /// 但「複製」出來的帳號共用同一個 token 時不作廢，否則另一個帳號也會被登出。
     func signOutPCloud(_ account: NetworkAccount) {
+        if let stored = CredentialStore.pcloudToken(for: account) {
+            let shared = library.accounts.contains { $0.id != account.id && CredentialStore.pcloudToken(for: $0) == stored }
+            if !shared {
+                let token = PCloudToken(keychainValue: stored), region = account.pcloudRegion
+                Task { await PCloudLogin.signOut(token, region: region) }
+            }
+        }
         CredentialStore.deletePCloudToken(for: account)
         bump()
     }

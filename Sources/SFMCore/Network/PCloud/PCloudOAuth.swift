@@ -11,17 +11,14 @@ import Network
 /// 4. **以回呼帶回的 `hostname` 換 token**（`/oauth2_token`）：歐洲帳號必須打 `eapi.pcloud.com`，
 ///    打美國區會換不到；並以 `locationid`／`hostname` 決定帳號地區，覆寫使用者事先選的地區。
 ///
+/// 選用：預設改用帳號密碼登入（`PCloudLogin`，不需註冊 app）；只有在 設定 → 網路 填了 client ID 時才提供此方式。
+///
 /// 前提：使用者已在 pCloud 註冊 app（https://docs.pcloud.com/my_apps/），並把 `redirectURI` 加進允許的 redirect URI。
 public enum PCloudOAuth {
     public static let redirectPort: UInt16 = 53682
     public static var redirectURI: String { "http://127.0.0.1:\(redirectPort)/" }
     public static let authorizeURL = URL(string: "https://my.pcloud.com/oauth2/authorize")!
     public static let appsPage = URL(string: "https://docs.pcloud.com/my_apps/")!
-
-    public struct Result: Sendable, Equatable {
-        public let token: String
-        public let region: PCloudRegion
-    }
 
     /// 回呼參數
     struct Callback: Equatable {
@@ -70,7 +67,7 @@ public enum PCloudOAuth {
     /// 執行完整登入。`openBrowser` 由 App 層提供（`NSWorkspace.open`），core 不依賴 AppKit。
     /// `preferredRegion` 只在回呼沒帶地區時使用。
     public static func signIn(clientID: String, clientSecret: String, preferredRegion: PCloudRegion,
-                              openBrowser: @Sendable (URL) -> Void) async throws -> Result {
+                              openBrowser: @Sendable (URL) -> Void) async throws -> PCloudSession {
         guard !clientID.isEmpty, !clientSecret.isEmpty else { throw NetworkError.pcloudNotConfigured }
         let state = UUID().uuidString
         let receiver = try LoopbackReceiver(port: redirectPort)
@@ -87,7 +84,7 @@ public enum PCloudOAuth {
         let callback = try parseCallback(requestLine: line, expectedState: state)
         let region = tokenHost(for: callback, fallback: preferredRegion)
         let token = try await exchange(code: callback.code, clientID: clientID, clientSecret: clientSecret, region: region)
-        return Result(token: token, region: callback.region ?? region)
+        return PCloudSession(token: PCloudToken(kind: .oauth, value: token), region: callback.region ?? region, email: nil)
     }
 
     private struct TokenResponse: Decodable {

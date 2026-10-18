@@ -183,9 +183,9 @@ private struct NetworkSettingsView: View {
                     }
                     Link(destination: PCloudOAuth.appsPage) { Label("Create a pCloud app…", systemImage: "safari") }
                 } header: {
-                    Text("pCloud sign-in")
+                    Text("pCloud browser sign-in (optional)")
                 } footer: {
-                    Text("Create an app in pCloud “My applications” and add the redirect URI above. The same app works for US and Europe accounts. The secret is kept in the login keychain.")
+                    Text("Not needed: pCloud accounts sign in with email and password. Fill this in only to sign in through the browser (OAuth) with your own pCloud app — add the redirect URI above to it. The secret is kept in the login keychain.")
                         .font(.caption)
                 }
             }

@@ -22,6 +22,9 @@ struct AccountEditorView: View {
     @State private var test: TestState = .idle
     @State private var signingIn = false
     @State private var signedInToken = false
+    /// pCloud 帳號啟用兩步驟驗證：等使用者輸入驗證碼
+    @State private var twoFactor: PCloudLogin.TwoFactorRequired?
+    @State private var twoFactorCode = ""
     @State private var errorMessage: String?
 
     enum TestState: Equatable {
@@ -171,9 +174,11 @@ struct AccountEditorView: View {
             Text("Set automatically when you sign in (each pCloud account lives in one region).")
                 .font(.caption).foregroundStyle(.secondary)
             TextField("Start folder", text: $draft.rootPath, prompt: Text("/"))
-            LabeledContent("Account") {
-                HStack {
-                    if signedInToken {
+        }
+        Section("Sign-in") {
+            if signedInToken {
+                LabeledContent("Account") {
+                    HStack {
                         Label(draft.username.isEmpty ? String(localized: "Signed in") : draft.username,
                               systemImage: "checkmark.circle.fill").foregroundStyle(.green)
                         Button("Sign Out") {
@@ -181,22 +186,31 @@ struct AccountEditorView: View {
                             signedInToken = false
                             test = .idle
                         }
-                    } else {
-                        Text("Not signed in").foregroundStyle(.secondary)
                     }
-                    Button(signedInToken ? "Sign In Again…" : "Sign In with pCloud…") { signIn() }
-                        .disabled(signingIn || app.accounts.library.pcloudClientID.isEmpty)
+                }
+            } else if let pending = twoFactor {
+                TextField("Verification code", text: $twoFactorCode, prompt: Text("123456"))
+                Text("Enter the code from your authenticator app or text message.")
+                    .font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    Button("Verify") { verifyTwoFactor(pending) }
+                        .disabled(signingIn || twoFactorCode.filter(\.isNumber).isEmpty)
+                    Button("Cancel") { twoFactor = nil; twoFactorCode = "" }
                     if signingIn { ProgressView().controlSize(.small) }
                 }
-            }
-            if app.accounts.library.pcloudClientID.isEmpty {
+            } else {
+                TextField("Email", text: $draft.username)
+                SecureField("Password", text: $password)
                 HStack {
-                    Label("Set the pCloud client ID and secret first.", systemImage: "info.circle")
-                    SettingsLink { Text("Open Settings…") }
+                    Button("Sign In") { signInWithPassword() }
+                        .disabled(signingIn || draft.username.trimmingCharacters(in: .whitespaces).isEmpty || password.isEmpty)
+                    if !app.accounts.library.pcloudClientID.isEmpty {
+                        Button("Sign In with Browser…") { signIn() }.disabled(signingIn)
+                    }
+                    if signingIn { ProgressView().controlSize(.small) }
                 }
-                .font(.caption)
-            } else if signingIn {
-                Text("Finish signing in in your browser…").font(.caption).foregroundStyle(.secondary)
+                Text("The password is only used to sign in; just the sign-in token is kept in the login keychain.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
         }
     }
@@ -300,28 +314,58 @@ struct AccountEditorView: View {
         }
     }
 
+    /// 帳號密碼登入（不需註冊 pCloud App）；密碼只用來換 token，不存
+    private func signInWithPassword() {
+        let email = draft.username, secret = password, region = draft.pcloudRegion
+        runSignIn {
+            do {
+                return try await PCloudLogin.signIn(email: email, password: secret, preferredRegion: region)
+            } catch let pending as PCloudLogin.TwoFactorRequired {
+                twoFactor = pending
+                return nil
+            }
+        }
+    }
+
+    private func verifyTwoFactor(_ pending: PCloudLogin.TwoFactorRequired) {
+        let code = twoFactorCode
+        runSignIn { try await PCloudLogin.verify(pending, code: code) }
+    }
+
+    /// 瀏覽器 OAuth 登入（選用：設定 → 網路 填了 client ID 才顯示）
     private func signIn() {
-        let account = draft
         let clientID = app.accounts.library.pcloudClientID
         let secret = CredentialStore.pcloudClientSecret ?? ""
-        let options = app.accounts.options(for: account)
+        let region = draft.pcloudRegion
+        let options = app.accounts.options(for: draft)
+        runSignIn {
+            let session = try await PCloudOAuth.signIn(clientID: clientID, clientSecret: secret, preferredRegion: region) { url in
+                Task { @MainActor in NSWorkspace.shared.open(url) }
+            }
+            let email = try? await NetworkSourceFactory.pcloudEmail(token: session.token, region: session.region, options: options)
+            return PCloudSession(token: session.token, region: session.region, email: email)
+        }
+    }
+
+    /// 登入共用的收尾：存 token、更新地區與 email、顯示結果。`work` 回傳 nil＝尚未完成（等兩步驟驗證碼）
+    private func runSignIn(_ work: @escaping @MainActor () async throws -> PCloudSession?) {
+        let account = draft
         signingIn = true
+        test = .idle
         Task {
             defer { signingIn = false }
             do {
-                let result = try await PCloudOAuth.signIn(clientID: clientID, clientSecret: secret,
-                                                          preferredRegion: account.pcloudRegion) { url in
-                    Task { @MainActor in NSWorkspace.shared.open(url) }
-                }
-                let email = try? await NetworkSourceFactory.pcloudEmail(token: result.token, region: result.region,
-                                                                        options: options)
-                let changedRegion = result.region != account.pcloudRegion
-                let updated = try app.accounts.savePCloudSignIn(result, email: email, for: account)
+                guard let session = try await work() else { return }
+                let changedRegion = session.region != account.pcloudRegion
+                let updated = try app.accounts.savePCloudSignIn(session, for: account)
                 draft.pcloudRegion = updated.pcloudRegion
                 draft.username = updated.username
+                password = savedPassword
+                twoFactor = nil
+                twoFactorCode = ""
                 signedInToken = true
                 test = .success(changedRegion
-                    ? String(localized: "Signed in — region set to \(result.region == .eu ? String(localized: "Europe") : String(localized: "United States")) for this account")
+                    ? String(localized: "Signed in — region set to \(session.region == .eu ? String(localized: "Europe") : String(localized: "United States")) for this account")
                     : String(localized: "Signed in"))
             } catch let error as NetworkError {
                 test = .failure(error)

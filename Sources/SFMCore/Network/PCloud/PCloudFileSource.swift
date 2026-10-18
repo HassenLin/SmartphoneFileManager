@@ -9,7 +9,7 @@ public struct PCloudFileSource: FileSource {
     public let account: NetworkAccount
     let client: PCloudClient
 
-    init(account: NetworkAccount, token: String, options: ConnectionOptions.Resolved) {
+    init(account: NetworkAccount, token: PCloudToken, options: ConnectionOptions.Resolved) {
         self.account = account
         self.client = PCloudClient(region: account.pcloudRegion, token: token, options: options)
     }

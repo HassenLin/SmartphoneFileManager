@@ -12,7 +12,7 @@
 - **iPhone**：USB 或 **Wi-Fi**（先以 USB 接一次、在 Finder 開啟「在 Wi-Fi 上時顯示此 iPhone」，之後同網路即可；USB 與 Wi-Fi 同時存在時用 USB）。透過 libimobiledevice（`brew install libimobiledevice ideviceinstaller`）。根目錄分兩個虛擬資料夾：
   `Media`（DCIM、Downloads、Books…）與 `Apps`（開啟檔案分享的 App 及其 Documents，等同 Finder 的「檔案」分頁）
 - **網路帳號**：WebDAV（https／http、自簽憑證可釘選）、FTP（純 FTP／FTPS explicit／FTPS implicit；被動／主動）、SFTP（密碼或私鑰）、
-  pCloud（OAuth2，美國／歐洲資料中心）。FTP／FTPS／SFTP 需 `brew install lftp`；pCloud 需自行在 pCloud 註冊 App（設定 → 網路）
+  pCloud（Email＋密碼登入、支援兩步驟驗證，美國／歐洲資料中心自動判定；OAuth 瀏覽器登入為選用）。FTP／FTPS／SFTP 需 `brew install lftp`
 - **發佈**：自用、App Sandbox 關閉；簽章優先用鑰匙圈裡的 Apple Development 憑證（重新 build 不必再允許鑰匙圈存取），找不到才 ad-hoc；**語系**：English／繁體中文／简体中文（跟隨系統語言）
 - **安裝導引**：缺 adb、libimobiledevice、scrcpy 時於 app 內顯示步驟、官方下載連結與一鍵安裝指令（輔助說明 → 安裝導引）
 
@@ -94,7 +94,7 @@ Sources/SFMCore/              L1：零 UI 相依，可 swift test
   Adb/                        AdbClient/DeviceConnection、AdbLocator、ShellText 跳脫、Tokenizer
   Network/                    網路來源：NetworkAccount（帳號＋ConnectionOptions）、帳號庫 accounts.json、CredentialStore（鑰匙圈）、
                               NetworkSourceFactory（協定 → 實作的唯一對應）、WebDAV/（移植自 nas_webdav）、
-                              Lftp/（FTP／FTPS／SFTP，lftp 子行程）、PCloud/（REST、OAuth2 loopback）
+                              Lftp/（FTP／FTPS／SFTP，lftp 子行程）、PCloud/（REST、帳號密碼登入、選用 OAuth2 loopback）
   Sources/                    FileSource 抽象（含續傳介面 ResumableTransfer）+ Mac／Android／iPhone／MTP 實作；
                               MacLocations（Mac 位置捷徑：雲端硬碟、磁碟）
   MTP/                        MTPSession（每台裝置一條序列佇列）、MTPDeviceManager（偵測／開啟／釋放）
@@ -124,7 +124,7 @@ tools/                        install.sh、make-app.sh、make-icon.swift、AppIc
 - `swift build` 零警告；`swift test` 92/92；實機整合測試（Palma Android + iPhone iOS 27）通過。
 - 網路實機測試（本機測試伺服器）通過：FTP 被動／主動、FTPS explicit／implicit、SFTP、WebDAV（http）——列表、上傳、下載、
   續傳上傳／下載、改名、資料夾上傳／下載、刪除、錯誤密碼。帳號清單與設定畫面已截圖確認。
-- **待驗收**：Synology WebDAV（https＋釘選憑證）實機、pCloud 美國／歐洲帳號 OAuth 登入（需自行註冊 pCloud App）、
+- **待驗收**：Synology WebDAV（https＋釘選憑證）實機、pCloud 美國／歐洲帳號實際登入（Email＋密碼、兩步驟驗證）、
   網路帳號的 UI 端到端操作（新增帳號 → 開在窗格 → 拖放傳輸）。
 - 已截圖確認：左 iPhone／右 Android 雙窗格瀏覽。
 - 待手動驗收：UI 上的 ⌘C/⌘X/⌘V、拖放。

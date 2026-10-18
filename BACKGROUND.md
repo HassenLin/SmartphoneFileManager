@@ -35,6 +35,6 @@
 | SFTP 主機金鑰 | app 專用 known_hosts、首次自動記住（accept-new） | 不動 `~/.ssh/known_hosts`；變更時拒絕連線，選項視窗可「忘記」。ssh 會把 UserKnownHostsFile 的值以空白切開，路徑需再包雙引號 |
 | WebDAV | 移植 nas_webdav 的用戶端（改 async、加進度與 Range 續傳） | 同一作者已驗證的 multistatus 解析、憑證釘選、部分寫入探測；探測只用隱藏探測檔，不拿真檔案試 |
 | 明文連線 | 允許（http、純 FTP），帳號清單與窗格標示「未加密」 | 區網 NAS／路由器常只有純 FTP；由使用者決定 |
-| pCloud 登入 | OAuth2 code flow＋127.0.0.1 loopback、使用者自備 App | 不存使用者密碼；歐洲帳號必須打 `eapi.pcloud.com`——以回呼的 `hostname`／`locationid` 決定地區並換 token，hostname 只接受兩個官方 host（不把 client secret 送到別處） |
+| pCloud 登入 | 預設 Email＋密碼（`getdigest`＋`passworddigest` 換 auth token，支援兩步驟驗證）；OAuth2 為選用 | OAuth 需註冊 App 且要等 pCloud 核准，太耗時 → 改為帳號密碼直接登入：密碼以一次性 digest 雜湊送出、不存，只存 token，登出時呼叫 `logout` 作廢；地區先試使用者選的區、失敗再試另一區。OAuth（選用）：歐洲帳號必須打 `eapi.pcloud.com`——以回呼的 `hostname`／`locationid` 決定地區並換 token，hostname 只接受兩個官方 host（不把 client secret 送到別處） |
 | pCloud 上傳續傳 | 不支援（整份重傳） | `uploadfile` 不能指定位置；可日後改 upload_create／upload_write |
 | 帳號選項 | 每欄 Optional＝沿用全域預設，`resolved(defaults:)` 產生具體值 | FileSource 不讀 UserDefaults，core 可測試；全域預設與帳號選項共用同一個表單 |

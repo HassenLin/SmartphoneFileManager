@@ -4,16 +4,17 @@ import Foundation
 ///
 /// - **地區**：美國帳號只能打 `api.pcloud.com`、歐洲帳號只能打 `eapi.pcloud.com`（`PCloudRegion`）；
 ///   打錯區會回 2000／2094，所以 host 由帳號的地區決定，不寫死。
-/// - 認證：OAuth2 access token，以 `Authorization: Bearer` 送出（不放 URL，避免出現在 log／proxy）。
+/// - 認證：OAuth2 access token 以 `Authorization: Bearer` 送出；帳號密碼登入的 auth token
+///   依 API 規定以 `auth=` 參數送出（見 `PCloudToken`）。
 /// - 回應一律 HTTP 200，成敗看 JSON 的 `result`（0＝成功），錯誤碼對應見 `error(_:)`。
 /// - 所有操作以**路徑**指定（`path=`／`topath=`），與 FileSource 的路徑模型一致，不需維護 id 對照。
 final class PCloudClient: @unchecked Sendable {
     let region: PCloudRegion
-    private let token: String
+    private let token: PCloudToken
     private let session: URLSession
     private let trust: TLSTrustDelegate
 
-    init(region: PCloudRegion, token: String, options: ConnectionOptions.Resolved) {
+    init(region: PCloudRegion, token: PCloudToken, options: ConnectionOptions.Resolved) {
         self.region = region
         self.token = token
         self.trust = TLSTrustDelegate(pinnedSHA256: "", username: "", password: "")
@@ -61,9 +62,11 @@ final class PCloudClient: @unchecked Sendable {
     }
 
     private func request(_ method: String, _ parameters: [String: String], httpMethod: String = "GET") -> URLRequest {
+        var parameters = parameters
+        if token.kind == .session { parameters["auth"] = token.value }
         var req = URLRequest(url: url(method, parameters))
         req.httpMethod = httpMethod
-        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        if token.kind == .oauth { req.setValue("Bearer \(token.value)", forHTTPHeaderField: "Authorization") }
         return req
     }
 
