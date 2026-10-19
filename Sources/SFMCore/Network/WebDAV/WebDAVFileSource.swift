@@ -103,7 +103,8 @@ public struct WebDAVFileSource: FileSource {
         try await resumeDownload(path, to: localURL, totalSize: totalSize, connections: 1, onProgress: onProgress)
     }
 
-    /// `connections > 1`（主執行器的大檔）：多連線分區塊；伺服器不支援 Range 時退回單一連線
+    /// 超過一個區塊：分區塊（`connections` 條連線；子執行器為 1），斷線不丟已下載的部分；
+    /// 伺服器不支援 Range 時退回單一 GET
     public func resumeDownload(_ path: String, to localURL: URL, totalSize: Int64, connections: Int,
                                onProgress: @escaping @Sendable (Double) -> Void) async throws {
         let segmented = SegmentedDownload.hasState(localURL)
@@ -112,8 +113,8 @@ public struct WebDAVFileSource: FileSource {
         guard have < totalSize || totalSize == 0 || segmented else { return onProgress(1) }
         // 有狀態檔＝上次就是分區塊，一定接著用（單一連線無法接續有空洞的檔案）
         var useSegments = segmented
-        // 不到兩個區塊的檔案切不開：多連線也只會有一個請求，直接單一連線（省掉 Range 探測）
-        if !useSegments && connections > 1 && totalSize > SegmentedDownload.blockSize {
+        // 一個區塊以內的檔案直接單一請求（省掉 Range 探測）
+        if !useSegments && totalSize > SegmentedDownload.blockSize {
             useSegments = await client.supportsRange(path)
         }
         if useSegments {

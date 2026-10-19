@@ -34,6 +34,7 @@ final class PCloudClient: @unchecked Sendable {
     struct Metadata: Decodable, Sendable {
         let name: String
         let isfolder: Bool
+        let folderid: UInt64?
         let size: Int64?
         let modified: String?
         let contents: [Metadata]?
@@ -46,8 +47,12 @@ final class PCloudClient: @unchecked Sendable {
         let hosts: [String]?
         let path: String?
         let email: String?
+        /// `upload_create` 的工作階段 ID
+        let uploadid: UInt64?
+        /// `upload_info`：工作階段已寫入的位元組數
+        let size: Int64?
 
-        private enum CodingKeys: String, CodingKey { case result, error, metadata, hosts, path, email }
+        private enum CodingKeys: String, CodingKey { case result, error, metadata, hosts, path, email, uploadid, size }
 
         /// `metadata` 多數方法是單一物件，但 `uploadfile` 回傳**陣列**（每個上傳檔一筆）→ 兩種都接受，取第一筆。
         /// 其他欄位也寬鬆解碼：只有 `result` 是必要的，多一個意料外的型別不該讓成功的操作變成失敗
@@ -60,6 +65,8 @@ final class PCloudClient: @unchecked Sendable {
             hosts = try? c.decodeIfPresent([String].self, forKey: .hosts)
             path = try? c.decodeIfPresent(String.self, forKey: .path)
             email = try? c.decodeIfPresent(String.self, forKey: .email)
+            uploadid = try? c.decodeIfPresent(UInt64.self, forKey: .uploadid)
+            size = try? c.decodeIfPresent(Int64.self, forKey: .size)
         }
     }
 
@@ -112,7 +119,7 @@ final class PCloudClient: @unchecked Sendable {
         let detail = message.isEmpty ? "pCloud \(method): error \(code)" : "\(message) (\(code))"
         switch code {
         case 1000, 2000, 2094, 2095, 4000: return .authenticationFailed(detail)
-        case 2002, 2005, 2009, 2055: return .notFound(detail)
+        case 2002, 2005, 2009, 2055, 2067: return .notFound(detail)
         case 2004: return .alreadyExists(detail)
         default: return .server(detail)
         }
@@ -243,6 +250,52 @@ final class PCloudClient: @unchecked Sendable {
         }
         try decode(data, method: "uploadfile")
         onProgress(1)
+    }
+
+    // MARK: 分段上傳（可續傳）
+
+    /// 官方文件沒有列出、但官方 Swift SDK（pcloud-sdk-swift `PCloudAPI.CreateUpload` 等）使用的上傳工作階段：
+    /// `upload_create` 建立 → `upload_write` 依位移寫入多段 → `upload_save` 存成檔案。
+    /// 工作階段保存在伺服器，中斷（斷線、暫停、關閉 app）後以 `upload_info` 查已寫入大小、從那裡接著寫。
+    /// 每段一個短請求：解決單一 `uploadfile` 傳十幾 GB 時，傳完等伺服器處理逾時、或中途斷線就整份重來的問題。
+    func uploadCreate() async throws -> UInt64 {
+        guard let id = try await call("upload_create", [:]).uploadid else {
+            throw NetworkError.server("pCloud upload_create: no upload id")
+        }
+        return id
+    }
+
+    /// 工作階段已寫入的位元組數；工作階段已過期或不存在（2067）時為 nil
+    func uploadInfo(_ id: UInt64) async throws -> Int64? {
+        do {
+            return try await call("upload_info", ["uploadid": String(id)]).size
+        } catch NetworkError.notFound {
+            return nil
+        }
+    }
+
+    /// 在 `offset` 寫入一段；`onProgress` 回報這一段已送出的位元組數
+    func uploadWrite(_ id: UInt64, offset: Int64, _ data: Data, onProgress: @escaping @Sendable (Int64) -> Void) async throws {
+        var req = request("upload_write", ["uploadid": String(id), "uploadoffset": String(offset)], httpMethod: "POST")
+        req.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+        let progress = TransferProgressDelegate(upload: true) { sent, _ in onProgress(sent) }
+        let body: Data
+        do {
+            (body, _) = try await session.upload(for: req, from: data, delegate: progress)
+        } catch {
+            throw Self.map(error)
+        }
+        try decode(body, method: "upload_write")
+    }
+
+    /// 存成檔案（同名直接覆寫，衝突已由工作佇列處理）；`mtime` 保留本機修改時間
+    func uploadSave(_ id: UInt64, to path: String, modified: Date?) async throws {
+        guard let folderID = try await metadata(RemotePath.parent(of: path))?.folderid else {
+            throw NetworkError.notFound("pCloud: \(RemotePath.parent(of: path))")
+        }
+        var parameters = ["uploadid": String(id), "folderid": String(folderID), "name": RemotePath.name(of: path)]
+        if let modified { parameters["mtime"] = String(Int64(modified.timeIntervalSince1970)) }
+        try await call("upload_save", parameters)
     }
 
     // MARK: 日期

@@ -8,8 +8,14 @@ import Foundation
 /// 全部完成才刪除狀態檔——**狀態檔存在＝檔案尚未完整**（即使大小已經等於總大小）。
 ///
 /// 從單一連線的部分檔案接續時（沒有狀態檔、檔案比總大小小）：已有的前段視為完成的區塊，不必重抓。
+///
+/// **單一連線也用這個**（`connections == 1`）：一般的單一 GET 下載到暫存檔、完成才搬到目的地，
+/// 十幾 GB 傳到 90% 斷線就全部白費；分區塊則每完成一塊就落地，斷線只損失手上那一塊。
+/// 每個區塊遇到暫時性錯誤先就地重試幾次（`blockRetries`），還不行才往上拋，交給工作佇列的重試（`TransferRetry`）。
 enum SegmentedDownload {
     static let blockSize: Int64 = 8 << 20
+    /// 單一區塊的就地重試等待（短暫斷線不必驚動整個檔案）
+    static let blockRetries: [Duration] = [.seconds(1), .seconds(3)]
 
     struct State: Codable, Equatable {
         var size: Int64
@@ -59,7 +65,7 @@ enum SegmentedDownload {
                     while let index = await tracker.next() {
                         try Task.checkCancellation()
                         let range = range(of: index, block: state.block, size: totalSize)
-                        let data = try await fetch(range)
+                        let data = try await fetchWithRetry(range, fetch)
                         guard Int64(data.count) == Int64(range.count) else {
                             throw NetworkError.server("Range \(range.lowerBound)-\(range.upperBound): got \(data.count) bytes")
                         }
@@ -79,6 +85,18 @@ enum SegmentedDownload {
         try handle.close()
         try? fm.removeItem(at: stateURL(for: localURL))
         onProgress(1)
+    }
+
+    private static func fetchWithRetry(_ range: ClosedRange<Int64>,
+                                       _ fetch: @Sendable (ClosedRange<Int64>) async throws -> Data) async throws -> Data {
+        for delay in blockRetries {
+            do {
+                return try await fetch(range)
+            } catch where TransferRetry.isTransient(error) {
+                try await Task.sleep(for: delay)
+            }
+        }
+        return try await fetch(range)
     }
 
     /// 區塊分配與完成記錄（多個工作者共用）

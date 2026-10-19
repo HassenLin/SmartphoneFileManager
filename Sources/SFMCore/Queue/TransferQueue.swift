@@ -57,9 +57,12 @@ public final class TransferQueue {
     public private(set) var conflicts: [TransferConflict] = []
     /// 執行中工作的傳輸速率（工作 ID → 速率）；每次開始執行時重新計算，不保存
     public private(set) var rates: [UUID: TransferRate] = [:]
-    /// 主執行器正在傳的檔案（工作 ID → 節點 ID）與它自己的速率（只計這個檔案的增量）
-    public private(set) var mainFiles: [UUID: UUID] = [:]
-    public private(set) var mainRates: [UUID: TransferRate] = [:]
+    /// 傳輸中的檔案由哪個執行器處理（工作 ID → 節點 ID → 執行器）；工作列為每個執行器顯示一條進度
+    public private(set) var fileLanes: [UUID: [UUID: ExecutorLane]] = [:]
+    /// 每個傳輸中檔案自己的速率（節點 ID → 速率，只計這個檔案的增量）
+    public private(set) var fileRates: [UUID: TransferRate] = [:]
+    /// 單檔暫時性錯誤的重試等待（測試可縮短）
+    @ObservationIgnored public var retry = TransferRetry.standard
     /// 工作結束（完成／失敗／停止）時通知，app 據此重新載入窗格、顯示提示
     @ObservationIgnored public var onJobFinished: ((TransferJob) -> Void)?
 
@@ -227,6 +230,7 @@ public final class TransferQueue {
                 ask: { [weak self] conflict in await self?.ask(conflict) ?? .skip },
                 options: job.syncOptions, twoWay: job.syncTwoWay == true)
             executor.lanes = ExecutorLanes(parallelTransfers: parallel)
+            executor.retry = retry
             try await executor.run(roots)
             finish(id, cancelled: false)
         } catch is CancellationError {
@@ -240,8 +244,8 @@ public final class TransferQueue {
     private func finish(_ id: UUID, cancelled: Bool, failed: Bool = false) {
         tasks[id] = nil
         rates[id] = nil
-        mainFiles[id] = nil
-        mainRates[id] = nil
+        for nodeID in (fileLanes[id] ?? [:]).keys { fileRates[nodeID] = nil }
+        fileLanes[id] = nil
         guard let index = index(id) else { return }
         conflicts.removeAll { $0.jobID == id }
         if cancelled {
@@ -302,10 +306,14 @@ public final class TransferQueue {
                 if state == .done, !$0.isDirectory { $0.transferred = $0.size }
             }
             // 每個節點結束都保存，關閉 app 後才知道從哪裡繼續
-            if state != .running { save() }
-        case let .mainFile(nodeID):
-            mainFiles[id] = nodeID
-            mainRates[id] = TransferRate()
+            if state != .running {
+                fileLanes[id]?[nodeID] = nil
+                fileRates[nodeID] = nil
+                save()
+            }
+        case let .fileStarted(nodeID, lane):
+            fileLanes[id, default: [:]][nodeID] = lane
+            fileRates[nodeID] = TransferRate()
         case let .expand(nodeID, children):
             jobs[index].updateNode(nodeID) {
                 $0.children = children
@@ -323,20 +331,20 @@ public final class TransferQueue {
 
     private func applyProgress(_ id: UUID, _ updates: [UUID: Int64]) {
         guard let index = index(id) else { return }
-        var moved: Int64 = 0, mainMoved: Int64 = 0
-        let main = mainFiles[id]
+        var moved: Int64 = 0
+        var perFile: [UUID: Int64] = [:]
         for (nodeID, bytes) in updates {
             jobs[index].updateNode(nodeID) {
                 guard $0.state == .running else { return }
                 // 只累計增量：續傳的第一次回報是「已有的大小」，與節點保存的 transferred 相近，不會灌高速率
                 let delta = max(0, bytes - $0.transferred)
                 moved += delta
-                if nodeID == main { mainMoved += delta }
+                perFile[nodeID] = delta
                 $0.transferred = bytes
             }
         }
         rates[id]?.record(moved)
-        if main != nil { mainRates[id]?.record(mainMoved) }
+        for (nodeID, delta) in perFile { fileRates[nodeID]?.record(delta) }
     }
 
     private func ask(_ conflict: TransferConflict) async -> ConflictAction {
@@ -358,6 +366,12 @@ public final class TransferQueue {
     // MARK: 工具
 
     public func job(_ id: UUID) -> TransferJob? { jobs.first { $0.id == id } }
+
+    /// 工作中正在傳的檔案與其執行器，主執行器在前、子執行器依編號
+    public func activeFiles(of job: TransferJob) -> [(node: TransferNode, lane: ExecutorLane)] {
+        (fileLanes[job.id] ?? [:]).compactMap { nodeID, lane in job.runningFile(nodeID).map { ($0, lane) } }
+            .sorted { $0.lane < $1.lane }
+    }
     private func index(_ id: UUID) -> Int? { jobs.firstIndex { $0.id == id } }
     private func save() { store.save(jobs) }
 }

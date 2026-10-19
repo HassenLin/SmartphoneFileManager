@@ -1,11 +1,11 @@
 import Foundation
 
-/// 單檔傳輸由哪個執行器處理
-enum ExecutorLane: Sendable {
+/// 單檔傳輸由哪個執行器處理（UI 依此為每個執行器的進度條上不同顏色）
+public enum ExecutorLane: Sendable, Hashable, Comparable {
     /// 大檔（或逐檔時的全部檔案）；下載用多條連線
     case main
-    /// 小檔；單一連線
-    case sub
+    /// 小檔；單一連線。編號 0…子執行器數−1（只用於區分顯示，分派不看編號）
+    case sub(Int)
 }
 
 /// 主執行器＋子執行器的組態（佇列依同時傳輸數建立；實際分派見 `TransferDispatcher`）。
@@ -32,8 +32,8 @@ enum NodeEvent: Sendable {
     case retarget(UUID, path: String)
     /// 資料夾執行到時才列出的內容（佇列寫入樹並保存，繼續時不必重新列出）
     case expand(UUID, children: [TransferNode])
-    /// 主執行器開始傳這個檔案（工作列「目前」只顯示主執行器，不被子執行器的小檔干擾）
-    case mainFile(UUID)
+    /// 某個執行器開始傳這個檔案（工作列為每個執行器顯示一條進度）
+    case fileStarted(UUID, lane: ExecutorLane)
 }
 
 /// 依工作樹逐節點執行（深度優先）。不持有狀態：每次繼續都以佇列保存的樹重新進入，
@@ -68,6 +68,8 @@ struct TransferExecutor: Sendable {
     var lanes: ExecutorLanes? = nil
     /// 執行中的分派器（`run` 建立，整個工作共用；反方向的執行器沿用同一個）
     var dispatcher: TransferDispatcher? = nil
+    /// 單檔遇到暫時性錯誤（斷線、磁碟暫時讀不到）時的重試等待（見 `TransferRetry`）
+    var retry = TransferRetry.standard
 
     /// 大檔門檻：涉及的非 Mac 來源中最小者（Mac 與裝置沒有門檻 → 不分大小檔）
     private var largeThreshold: Int64? {
@@ -84,7 +86,7 @@ struct TransferExecutor: Sendable {
         guard let destination else { return nil }
         return TransferExecutor(jobID: jobID, source: destination, destination: source, staging: staging,
                                 report: report, progress: progress, ask: ask, options: options, twoWay: twoWay, isSwapped: true,
-                                lanes: lanes, dispatcher: dispatcher)
+                                lanes: lanes, dispatcher: dispatcher, retry: retry)
     }
 
     func run(_ nodes: [TransferNode]) async throws {
@@ -102,7 +104,7 @@ struct TransferExecutor: Sendable {
                     await dispatcher.finish()
                 }
                 group.addTask { try await executor.work(.main, dispatcher) }
-                for _ in 0..<lanes.subCount { group.addTask { try await executor.work(.sub, dispatcher) } }
+                for index in 0..<lanes.subCount { group.addTask { try await executor.work(.sub(index), dispatcher) } }
                 do {
                     for try await _ in group {}
                 } catch {
@@ -125,7 +127,7 @@ struct TransferExecutor: Sendable {
                 continue
             }
             // 子執行器：放在可單獨取消的工作裡跑，主執行器接手時只停這個檔案
-            let task = Task { try await runNode(node, on: .sub) }
+            let task = Task { try await runNode(node, on: lane) }
             await dispatcher.started(item) { task.cancel() }
             do {
                 let state = try await withTaskCancellationHandler { try await task.value } onCancel: { task.cancel() }
@@ -285,23 +287,48 @@ struct TransferExecutor: Sendable {
         }
 
         await report(.state(node.id, .running))
-        if lane == .main { await report(.mainFile(node.id)) }
+        await report(.fileStarted(node.id, lane: lane))
         let size = node.size
         let progress: @Sendable (Double) -> Void = { [sink = self.progress, id = node.id] fraction in
             sink(id, Int64(Double(size) * min(1, max(0, fraction))))
         }
         // 主執行器一律多連線（不論檔案大小）；子執行器一律單一連線
         let connections = lane == .main ? source.largeFileConnections : 1
-        do {
-            try await copyFile(node.sourcePath, to: target, size: size, destination: destination,
-                               stagingKey: node.id.uuidString, connections: connections, progress: progress)
-        } catch is CancellationError {
-            await report(.state(node.id, .partial))
-            throw CancellationError()
+        var attempt = 0
+        while true {
+            do {
+                try await copyFile(node.sourcePath, to: target, size: size, destination: destination,
+                                   stagingKey: node.id.uuidString, connections: connections, progress: progress)
+                break
+            } catch is CancellationError {
+                await report(.state(node.id, .partial))
+                throw CancellationError()
+            } catch where attempt < retry.delays.count && isRetryable(error, node: node, target: target) {
+                // 暫時性錯誤：等一下再呼叫一次，各來源的續傳從已傳的部分接著做（見 TransferRetry）
+                let delay = retry.delays[attempt]
+                attempt += 1
+                let seconds = Int(delay.components.seconds)
+                await report(.state(node.id, .running, message: String(
+                    localized: "Retrying in \(seconds) s (\(attempt)/\(retry.delays.count)): \(error.localizedDescription)")))
+                do {
+                    try await Task.sleep(for: delay)
+                } catch {
+                    await report(.state(node.id, .partial))
+                    throw CancellationError()
+                }
+            }
         }
         self.progress(node.id, size)
         if node.deleteSourceAfter { try await source.delete(node.sourcePath) }
         return .done
+    }
+
+    /// 錯誤本身是暫時性的，或 Mac 端（來源或目的）所在的外接磁碟暫時不見了
+    private func isRetryable(_ error: Error, node: TransferNode, target: String) -> Bool {
+        if TransferRetry.isTransient(error) { return true }
+        let macPaths = [source.id.kind == .mac ? node.sourcePath : nil,
+                        destination?.id.kind == .mac ? target : nil].compactMap { $0 }
+        return macPaths.contains(where: TransferRetry.volumeMissing)
     }
 
     /// 依來源組合選擇單檔傳輸路徑

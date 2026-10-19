@@ -158,6 +158,33 @@ struct PCloudTests {
         #expect(try JSONDecoder().decode(PCloudClient.Envelope.self, from: Data(stat.utf8)).metadata?.isfolder == true)
     }
 
+    @Test func uploadSessionResponsesDecode() throws {
+        let create = #"{"result":0,"uploadid":123456789012}"#
+        #expect(try JSONDecoder().decode(PCloudClient.Envelope.self, from: Data(create.utf8)).uploadid == 123456789012)
+        let info = #"{"result":0,"size":33554432,"md5":"x","sha1":"y"}"#
+        #expect(try JSONDecoder().decode(PCloudClient.Envelope.self, from: Data(info.utf8)).size == 33554432)
+        let folder = #"{"result":0,"metadata":{"name":"/","isfolder":true,"folderid":0}}"#
+        #expect(try JSONDecoder().decode(PCloudClient.Envelope.self, from: Data(folder.utf8)).metadata?.folderid == 0)
+        // 工作階段過期（2067）視為不存在：上傳改建新的工作階段
+        if case .notFound = PCloudClient.error(2067, "", method: "upload_info") {} else { Issue.record("2067 應為 notFound") }
+    }
+
+    @Test func uploadSessionRecordsPersist() throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("sfm-pcloud-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: file) }
+        let key = PCloudUploadSessions.key(account: UUID(), path: "/a/b.zip")
+        let record = PCloudUploadSessions.Record(uploadID: 9, localPath: "/x/b.zip", size: 100, modified: 1)
+        PCloudUploadSessions(file: file).set(record, for: key)
+        // 另一個實例（重開 app）讀得到
+        let reloaded = try #require(PCloudUploadSessions(file: file).record(for: key))
+        #expect(reloaded == record)
+        // 本機檔被改過（大小或修改時間不同）就不能沿用
+        #expect(!reloaded.matches(.init(uploadID: 0, localPath: "/x/b.zip", size: 101, modified: 1)))
+        #expect(reloaded.matches(.init(uploadID: 0, localPath: "/x/b.zip", size: 100, modified: 1)))
+        PCloudUploadSessions(file: file).set(nil, for: key)
+        #expect(PCloudUploadSessions(file: file).record(for: key) == nil)
+    }
+
     @Test func plusSignIsEncoded() {
         let client = PCloudClient(region: .eu, token: PCloudToken(kind: .oauth, value: "t"), options: .standard)
         let url = client.url("stat", ["path": "/a+b c.txt"])
@@ -368,6 +395,23 @@ struct SegmentedDownloadTests {
         }
         #expect(!fetched.starts.contains(0))          // 第 0 塊上次已完成，不重抓
         #expect(try Data(contentsOf: url) == content)
+    }
+
+    @Test func blockRetriesTransientErrorInPlace() async throws {
+        let content = Data((0..<(block + 10)).map { UInt8(truncatingIfNeeded: $0 &* 3) })
+        let url = temp()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let fetched = Fetched()
+        // 第 1 塊第一次斷線：就地重試成功，整個下載不失敗
+        try await SegmentedDownload.run(to: url, totalSize: Int64(content.count), connections: 1, onProgress: { _ in }) { range in
+            fetched.add(range.lowerBound)
+            if range.lowerBound == Int64(block), fetched.starts.filter({ $0 == Int64(block) }).count == 1 {
+                throw URLError(.networkConnectionLost)
+            }
+            return content.subdata(in: Int(range.lowerBound)..<Int(range.upperBound) + 1)
+        }
+        #expect(try Data(contentsOf: url) == content)
+        #expect(fetched.starts == [0, Int64(block), Int64(block)])
     }
 
     @Test func continuesFromSingleConnectionPrefix() {

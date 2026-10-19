@@ -21,6 +21,7 @@ struct TransferQueueTests {
         let map = Dictionary(uniqueKeysWithValues: sources.map { ($0.id, $0) })
         let queue = TransferQueue(store: QueueStore(directory: storeDirectory))
         queue.resolver = { map[$0] }
+        queue.retry = TransferRetry(delays: [.milliseconds(20), .milliseconds(20)])
         return queue
     }
 
@@ -237,7 +238,7 @@ struct TransferQueueTests {
         #expect(store.maxActiveDownloads <= 3 && store.maxActiveDownloads > 1)
     }
 
-    @Test func currentFileTracksMainExecutorOnly() async throws {
+    @Test func runningFilesAreTrackedPerExecutor() async throws {
         let store = FakeStore()
         store.directories.formUnion(["/a", "/a/dir"])
         store.files["/a/dir/big.bin"] = Data(repeating: 1, count: 100)
@@ -251,12 +252,17 @@ struct TransferQueueTests {
         let queue = makeQueue([cloud, other])
         let id = try #require(queue.enqueue(.copy, items: [FileItem(path: "/a/dir", isDirectory: true, size: 0)],
                                             from: cloud.id, to: other.id, directory: "/b"))
-        // 主執行器開始後，「目前」指向大檔；子執行器的小檔同時在傳也不會取代它
-        try await wait { queue.mainFiles[id] != nil }
-        let job = try #require(queue.job(id))
-        #expect(job.runningFile(queue.mainFiles[id])?.name == "big.bin")
+        // 每個執行器的檔案各自記錄：大檔在主執行器（排最前面）、小檔在子執行器，各有自己的速率
+        try await wait {
+            let lanes = queue.job(id).map { queue.activeFiles(of: $0).map(\.lane) } ?? []
+            return lanes.first == .main && lanes.count > 1
+        }
+        let active = queue.activeFiles(of: try #require(queue.job(id)))
+        #expect(active.first?.node.name == "big.bin")
+        #expect(active.dropFirst().allSatisfy { if case .sub = $0.lane { true } else { false } })
+        #expect(active.allSatisfy { queue.fileRates[$0.node.id] != nil })
         _ = try await finished(queue, id)
-        #expect(queue.mainFiles[id] == nil && queue.mainRates[id] == nil)
+        #expect(queue.fileLanes[id] == nil && queue.fileRates.isEmpty)
     }
 
     @Test func subExecutorsTakeLargeFilesWhenNoSmallOnes() async throws {
@@ -599,5 +605,60 @@ struct TransferProgressTests {
         #expect(DurationFormat.string(41.2) == "0:42")
         #expect(DurationFormat.string(725) == "12:05")
         #expect(DurationFormat.string(3723) == "1:02:03")
+    }
+}
+
+/// 單檔暫時性錯誤的重試（見 TransferRetry）
+@MainActor
+struct TransferRetryTests {
+    let storeDirectory = FileManager.default.temporaryDirectory.appendingPathComponent("sfm-retry-\(UUID().uuidString)")
+
+    func run(_ errors: [Error]) async throws -> (TransferJob, FakeStore) {
+        let store = FakeStore()
+        store.directories.insert("/a")
+        store.files["/a/x.bin"] = Data(repeating: 7, count: 64)
+        store.failures["/a/x.bin"] = errors
+        let cloud = FakeSource(id: .network(UUID()), store: store, nativeCopy: false)
+        let other = FakeSource(id: .network(UUID()), store: FakeStore(), nativeCopy: false)
+        other.store.directories.insert("/b")
+        let queue = TransferQueue(store: QueueStore(directory: storeDirectory))
+        queue.resolver = { [cloud, other] id in id == cloud.id ? cloud : id == other.id ? other : nil }
+        queue.retry = TransferRetry(delays: [.milliseconds(10), .milliseconds(10)])
+        let id = try #require(queue.enqueue(.copy, items: [FileItem(path: "/a/x.bin", isDirectory: false, size: 64)],
+                                            from: cloud.id, to: other.id, directory: "/b"))
+        for _ in 0..<300 where queue.job(id)?.state.isFinished != true { try await Task.sleep(for: .milliseconds(10)) }
+        return (try #require(queue.job(id)), other.store)
+    }
+
+    @Test func transientErrorIsRetriedThenSucceeds() async throws {
+        let (job, destination) = try await run([URLError(.networkConnectionLost), NetworkError.unreachable("timeout")])
+        #expect(job.state == .completed)
+        #expect(destination.files["/b/x.bin"]?.count == 64)
+        // 成功後不留下「重試中」的訊息
+        #expect(job.allNodes.allSatisfy { $0.message == nil })
+    }
+
+    @Test func permanentErrorFailsWithoutRetry() async throws {
+        let (job, _) = try await run([NetworkError.authenticationFailed("bad token")])
+        #expect(job.state == .failed)
+        #expect(job.allNodes.first { $0.name == "x.bin" }?.message?.contains("bad token") == true)
+    }
+
+    @Test func givesUpAfterAllDelays() async throws {
+        let (job, _) = try await run(Array(repeating: URLError(.timedOut), count: 3))
+        #expect(job.state == .failed)
+    }
+
+    @Test func classifiesErrors() {
+        // 外接磁碟暫時讀不到：Foundation 把 POSIX ENXIO（尚未設定裝置）包在 NSUnderlyingError 裡
+        let wrapped = NSError(domain: NSCocoaErrorDomain, code: NSFileReadUnknownError,
+                              userInfo: [NSUnderlyingErrorKey: NSError(domain: NSPOSIXErrorDomain, code: Int(ENXIO))])
+        #expect(TransferRetry.isTransient(wrapped))
+        #expect(TransferRetry.isTransient(URLError(.timedOut)))
+        #expect(!TransferRetry.isTransient(NSError(domain: NSPOSIXErrorDomain, code: Int(ENOENT))))
+        #expect(!TransferRetry.isTransient(NetworkError.notFound("x")))
+        #expect(TransferRetry.volumeMissing("/Volumes/sfm-no-such-disk-\(UUID().uuidString)/a.zip"))
+        #expect(!TransferRetry.volumeMissing("/Users/someone/a.zip"))
+        #expect(!TransferRetry.volumeMissing("/Volumes"))
     }
 }

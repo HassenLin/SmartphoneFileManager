@@ -23,6 +23,9 @@ final class FakeStore: @unchecked Sendable {
     var delays: [String: Duration] = [:]
     /// 下載開始的順序（路徑、連線數）
     var startLog: [(String, Int)] = []
+    /// 指定檔案接下來幾次下載要拋出的錯誤（依序取用；用完即正常下載），與每個檔案的下載嘗試次數
+    var failures: [String: [Error]] = [:]
+    var attempts: [String: Int] = [:]
 
     func with<T>(_ body: (FakeStore) throws -> T) rethrows -> T {
         lock.lock(); defer { lock.unlock() }
@@ -97,6 +100,11 @@ struct FakeSource: FileSource {
             s.maxActiveDownloads = max(s.maxActiveDownloads, s.activeDownloads)
         }
         defer { store.with { $0.activeDownloads -= 1 } }
+        let failure: Error? = store.with { s in
+            s.attempts[path, default: 0] += 1
+            return s.failures[path]?.isEmpty == false ? s.failures[path]!.removeFirst() : nil
+        }
+        if let failure { throw failure }
         try await Task.sleep(for: store.with { $0.delays[path] } ?? delay)
         let (dirs, files) = store.with { s in
             (s.directories.filter { $0 == path || $0.hasPrefix(path + "/") },

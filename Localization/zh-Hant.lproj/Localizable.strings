@@ -327,6 +327,7 @@
 "MTP device (disconnected)" = "MTP 裝置（未連線）";
 "MTP device not connected" = "MTP 裝置未連線";
 "Mac start folder" = "Mac 起始資料夾";
+"Main" = "主執行器";
 "Manufacturer" = "製造商";
 "Max FPS: %@" = "最高 FPS：%@";
 "Max connections" = "最大同時連線數";
@@ -479,6 +480,7 @@
 "Retries" = "重試次數";
 "Retry" = "重試";
 "Retry delay (seconds)" = "重試間隔（秒）";
+"Retrying in %lld s (%lld/%lld): %@" = "%1$lld 秒後重試（第 %2$lld/%3$lld 次）：%4$@";
 "Returned to ADB mode.\n" = "已回到 ADB 模式。\n";
 "Revert" = "還原";
 "Right" = "右";
@@ -556,6 +558,7 @@
 "Stopped %@" = "已停止 %@";
 "Storage" = "儲存空間";
 "Storage (/data)" = "儲存空間（/data）";
+"Sub %lld" = "子執行器 %lld";
 "Sync" = "同步";
 "Sync Projects" = "同步專案";
 "Sync complete: %lld file(s) copied, %lld item(s) deleted" = "同步完成：拷貝 %1$lld 個檔案、刪除 %2$lld 個項目";

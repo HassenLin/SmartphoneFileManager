@@ -24,7 +24,9 @@ struct TasksPanel: View {
                         ForEach(app.transfers.jobs) { ActivityRow(job: $0) }
                         ForEach(queue.jobs) { job in
                             DisclosureGroup {
-                                OutlineGroup(job.roots, children: \.children) { NodeRow(node: $0) }
+                                OutlineGroup(job.roots, children: \.children) {
+                                    NodeRow(node: $0, lane: queue.fileLanes[job.id]?[$0.id])
+                                }
                             } label: {
                                 JobRow(app: app, job: job)
                             }
@@ -98,7 +100,9 @@ private struct JobRow: View {
                     if let jobETA { Text(jobETA).font(.caption.monospacedDigit()).foregroundStyle(.secondary) }
                     Text(stateText).font(.caption).foregroundStyle(job.state == .failed ? .red : .secondary)
                 }
-                if job.state == .running, let file = job.runningFile(queue.mainFiles[job.id]) { currentFileLine(file) }
+                if job.state.isActive {
+                    ForEach(queue.activeFiles(of: job), id: \.node.id) { file in laneLine(file.node, lane: file.lane) }
+                }
                 if let message = job.message {
                     Text(message).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                 }
@@ -144,19 +148,22 @@ private struct JobRow: View {
                               : String(localized: "About \(time) left")
     }
 
-    /// 目前檔案：只顯示**主執行器**正在傳的檔案（子執行器的小檔來來去去，會讓這一行一直跳）。
-    /// 速率與剩餘時間只算主執行器自己（`mainRates`）；整個工作的總速率在上一行
-    private func currentFileLine(_ file: TransferNode) -> some View {
+    /// 每個執行器一行：執行器顏色的進度條、檔名、這個檔案自己的百分比／速率／剩餘時間（`fileRates`）。
+    /// 主執行器在最上面；整個工作的總進度與總速率在上一行。重試等待中的訊息也顯示在這裡
+    private func laneLine(_ file: TransferNode, lane: ExecutorLane) -> some View {
         let fraction = file.size > 0 ? min(1, Double(file.transferred) / Double(file.size)) : 0
-        let mainRate = queue.mainRates[job.id]
+        let rate = queue.fileRates[file.id]
         var parts = [fraction.formatted(.percent.precision(.fractionLength(0)))]
-        if let speed = mainRate?.bytesPerSecond { parts.append("\(ByteFormat.string(Int64(speed)))/s") }
-        if let seconds = mainRate?.secondsRemaining(file.size - file.transferred) {
+        if let speed = rate?.bytesPerSecond { parts.append("\(ByteFormat.string(Int64(speed)))/s") }
+        if let seconds = rate?.secondsRemaining(file.size - file.transferred) {
             parts.append(String(localized: "\(DurationFormat.string(seconds)) left"))
         }
         return HStack(spacing: 6) {
-            Text("Now: \(file.name)").lineLimit(1).truncationMode(.middle)
+            Text(lane.title).foregroundStyle(lane.color).frame(width: 64, alignment: .leading)
+            LaneBar(fraction: fraction, color: lane.color).frame(width: 120)
+            Text(file.name).lineLimit(1).truncationMode(.middle)
             Text(parts.joined(separator: " · ")).monospacedDigit()
+            if let message = file.message { Text(message).foregroundStyle(.orange).lineLimit(1) }
         }
         .font(.caption).foregroundStyle(.secondary)
     }
@@ -196,9 +203,10 @@ private struct JobRow: View {
     }
 }
 
-/// 工作樹的一個節點（資料夾或檔案）
+/// 工作樹的一個節點（資料夾或檔案）。傳輸中的檔案以處理它的執行器顏色顯示進度
 private struct NodeRow: View {
     let node: TransferNode
+    let lane: ExecutorLane?
 
     var body: some View {
         HStack(spacing: 8) {
@@ -211,7 +219,8 @@ private struct NodeRow: View {
             }
             Spacer(minLength: 8)
             if node.state == .running, node.size > 0 {
-                ProgressView(value: Double(node.transferred), total: Double(node.size)).frame(width: 120)
+                LaneBar(fraction: Double(node.transferred) / Double(node.size), color: lane?.color ?? .accentColor)
+                    .frame(width: 120)
             }
             if !node.isDirectory {
                 Text(ByteFormat.string(node.size)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
@@ -230,6 +239,41 @@ private struct NodeRow: View {
         case .skipped: Image(systemName: "arrow.uturn.right.circle").foregroundStyle(.secondary)
         case .failed: Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red)
         }
+    }
+}
+
+/// 執行器的顯示名稱與顏色：主執行器藍色，子執行器依編號輪流取色
+extension ExecutorLane {
+    private static let subColors: [Color] = [.green, .orange, .purple, .pink, .teal, .yellow, .brown, .indigo]
+
+    var color: Color {
+        switch self {
+        case .main: return .blue
+        case let .sub(index): return Self.subColors[index % Self.subColors.count]
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .main: return String(localized: "Main")
+        case let .sub(index): return String(localized: "Sub \(index + 1)")
+        }
+    }
+}
+
+/// 指定顏色的細進度條（系統 ProgressView 在 macOS 不一定套用 tint，執行器要靠顏色區分）
+private struct LaneBar: View {
+    let fraction: Double
+    let color: Color
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.secondary.opacity(0.2))
+                Capsule().fill(color).frame(width: geometry.size.width * min(1, max(0, fraction)))
+            }
+        }
+        .frame(height: 5)
     }
 }
 
