@@ -131,7 +131,8 @@ struct PCloudTests {
     }
 
     @Test func errorCodesAndDates() {
-        #expect(PCloudClient.error(2094, "Invalid access_token", method: "x") == .authenticationFailed("Invalid access_token (2094)"))
+        // 帶 token 的請求：失效訊息（見 expiredTokenHasActionableMessage）；登入方法保留伺服器訊息
+        #expect(PCloudClient.error(2094, "Invalid access_token", method: "oauth2_token") == .authenticationFailed("Invalid access_token (2094)"))
         #expect(PCloudClient.error(2005, "", method: "listfolder") == .notFound("pCloud listfolder: error 2005"))
         #expect(PCloudClient.error(2004, "exists", method: "x") == .alreadyExists("exists (2004)"))
         let date = PCloudClient.parseDate("Thu, 21 Mar 2013 18:31:57 +0000")
@@ -167,6 +168,19 @@ struct PCloudTests {
         #expect(try JSONDecoder().decode(PCloudClient.Envelope.self, from: Data(folder.utf8)).metadata?.folderid == 0)
         // 工作階段過期（2067）視為不存在：上傳改建新的工作階段
         if case .notFound = PCloudClient.error(2067, "", method: "upload_info") {} else { Issue.record("2067 應為 notFound") }
+    }
+
+    @Test func expiredTokenHasActionableMessage() {
+        // 帶 token 的 API 回 2000：token 失效，訊息要告訴使用者重新登入（不是「Log in failed」）
+        guard case let .authenticationFailed(detail) = PCloudClient.error(2000, "Log in failed.", method: "listfolder") else {
+            Issue.record("應為 authenticationFailed"); return
+        }
+        #expect(!detail.contains("Log in failed") && detail.contains("2000"))
+        // 登入本身回 2000＝帳密錯誤，保留伺服器訊息
+        guard case let .authenticationFailed(login) = PCloudClient.error(2000, "Log in failed.", method: "login") else {
+            Issue.record("應為 authenticationFailed"); return
+        }
+        #expect(login.contains("Log in failed"))
     }
 
     @Test func uploadSessionRecordsPersist() throws {
@@ -440,3 +454,32 @@ struct SegmentedDownloadTests {
         #expect(ExecutorLanes(parallelTransfers: 1) == nil)
     }
 }
+
+@Suite("adb server ownership")
+struct AdbServerTests {
+    /// 在 127.0.0.1 隨機埠開一個監聽 socket，回傳 (fd, 埠)
+    private func listen() throws -> (Int32, UInt16) {
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        var address = sockaddr_in()
+        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_addr.s_addr = inet_addr("127.0.0.1")
+        var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+        try withUnsafeMutablePointer(to: &address) { pointer in
+            try pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                guard bind(fd, $0, length) == 0, Darwin.listen(fd, 1) == 0, getsockname(fd, $0, &length) == 0 else {
+                    throw POSIXError(.EADDRINUSE)
+                }
+            }
+        }
+        return (fd, UInt16(bigEndian: address.sin_port))
+    }
+
+    @Test func detectsListeningServer() throws {
+        let (fd, port) = try listen()
+        #expect(AdbServer.isRunning(port: port))
+        close(fd)
+        #expect(!AdbServer.isRunning(port: port))
+    }
+}
+

@@ -24,6 +24,7 @@ struct MainWindowView: View {
         .navigationTitle("Smartphone File Manager")
         // 裝置接上／拔除／授權狀態改變 → 更新兩窗格的來源可用性
         .onChange(of: app.devices.devices) { _, _ in app.refreshSources() }
+        .onChange(of: app.needsAdb, initial: true) { _, _ in app.updateAdbWanted() }
         .onChange(of: app.devices.iphones) { _, _ in app.refreshSources() }
         .onChange(of: app.devices.mtpDevices) { _, _ in app.refreshSources() }
         .sheet(item: $app.sheet) { sheet in sheetContent(sheet) }

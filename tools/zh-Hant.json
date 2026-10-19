@@ -675,5 +675,12 @@
 "The main executor always downloads over several connections. With 2 or more simultaneous transfers, it takes the large files and the other slots move small files one connection each. With 1, it is the only executor, so every download uses several connections. Uploads always use one connection per file. With a phone on the other side, transfers stay one at a time. FTP servers often limit connections per IP.": "主執行器一律以多條連線下載。同時傳輸數 ≥ 2 時，主執行器負責大檔，其餘名額（子執行器）傳小檔，各一條連線；設為 1 時主執行器是唯一的執行器，每個下載都用多條連線。上傳每個檔案一律一條連線。另一端是手機時仍逐檔。FTP 伺服器常限制每個 IP 的連線數。",
 "Retrying in %lld s (%lld/%lld): %@": "%1$lld 秒後重試（第 %2$lld/%3$lld 次）：%4$@",
 "Main": "主執行器",
-"Sub %lld": "子執行器 %lld"
+"Sub %lld": "子執行器 %lld",
+"pCloud sign-in has expired. Edit the account and sign in again. (%@)": "pCloud 登入已失效，請編輯帳號重新登入。（%@）",
+"Could not check the sign-in: %@": "無法確認登入狀態：%@",
+"Sign-in has expired. Enter your password to sign in again.": "登入已失效，請輸入密碼重新登入。",
+"Checking sign-in…": "正在確認登入狀態…",
+"Checking…": "確認中…",
+"Sign in again": "請重新登入",
+"Signed in (unconfirmed)": "已登入（未確認）"
 }

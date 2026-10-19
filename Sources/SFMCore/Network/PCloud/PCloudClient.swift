@@ -114,9 +114,18 @@ final class PCloudClient: @unchecked Sendable {
         return envelope
     }
 
+    /// 帶 token 的請求回這些碼＝token 已失效（登出、過期、改密碼、舊版登入取得的 token）
+    static let invalidTokenCodes: Set<Int> = [1000, 2000, 2094, 2095]
+    /// 登入本身的方法：同樣的碼代表帳密錯誤，不是 token 失效
+    private static let signInMethods: Set<String> = ["login", "tfa_login", "getdigest", "oauth2_token", "logout"]
+
     /// pCloud 錯誤碼 → NetworkError（https://docs.pcloud.com/errors/）
     static func error(_ code: Int, _ message: String, method: String) -> NetworkError {
         let detail = message.isEmpty ? "pCloud \(method): error \(code)" : "\(message) (\(code))"
+        if invalidTokenCodes.contains(code), !signInMethods.contains(method) {
+            // 原本的「Log in failed (2000)」看不出該做什麼
+            return .authenticationFailed(String(localized: "pCloud sign-in has expired. Edit the account and sign in again. (\(String(code)))"))
+        }
         switch code {
         case 1000, 2000, 2094, 2095, 4000: return .authenticationFailed(detail)
         case 2002, 2005, 2009, 2055, 2067: return .notFound(detail)

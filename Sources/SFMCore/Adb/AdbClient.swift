@@ -62,6 +62,7 @@ public struct AdbClient: Sendable {
         guard FileManager.default.isExecutableFile(atPath: executable) else {
             throw AdbError.executableNotFound(executable)
         }
+        AdbServer.willRun(arguments)
         let output = try await ProcessRunner.run(executable, arguments, timeout: timeout)
         if check, output.exitCode != 0 {
             throw AdbError.commandFailed(exitCode: output.exitCode, output: output.text)

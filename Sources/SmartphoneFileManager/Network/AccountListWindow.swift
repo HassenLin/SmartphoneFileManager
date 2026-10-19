@@ -97,8 +97,7 @@ struct AccountListWindow: View {
     private func passwordCell(_ account: NetworkAccount) -> some View {
         switch account.protocol {
         case .pcloud:
-            Text(CredentialStore.pcloudToken(for: account) == nil ? String(localized: "Not signed in") : String(localized: "Signed in"))
-                .foregroundStyle(.secondary)
+            PCloudStatusCell(account: account, revision: app.accounts.revision)
         case .sftp where account.sftpAuth == .key:
             Text("Key").foregroundStyle(.secondary)
         default:
@@ -262,6 +261,40 @@ struct AccountListWindow: View {
             if selection == account.id { selection = nil }
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+}
+
+/// 帳號清單的 pCloud 登入欄：實際驗證 token（鑰匙圈有 token 不代表有效）。
+/// 帳號存檔、重新登入、登出都會遞增 `revision`（即使 email／地區沒變、帳號本身相同）→ 自動重新確認
+private struct PCloudStatusCell: View {
+    let account: NetworkAccount
+    let revision: Int
+    @State private var status: PCloudTokenStatus = .checking
+
+    var body: some View {
+        Text(status.shortTitle)
+            .foregroundStyle(status.color)
+            .help(status.helpText)
+            .task(id: Key(account: account, revision: revision)) {
+                status = PCloudTokenStatus.initial(for: account)
+                guard status == .checking, let checked = await PCloudTokenStatus.check(account) else { return }
+                status = checked
+            }
+    }
+
+    private struct Key: Equatable {
+        let account: NetworkAccount
+        let revision: Int
+    }
+}
+
+private extension PCloudTokenStatus {
+    var helpText: String {
+        switch self {
+        case .expired: return String(localized: "Sign-in has expired. Enter your password to sign in again.")
+        case let .unverified(reason): return String(localized: "Could not check the sign-in: \(reason)")
+        default: return ""
         }
     }
 }

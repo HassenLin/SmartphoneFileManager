@@ -122,6 +122,28 @@ public enum PCloudLogin {
         return PCloudSession(token: PCloudToken(kind: .session, value: auth), region: pending.region, email: pending.email)
     }
 
+    /// token 是否仍有效（鑰匙圈有 token 不代表有效：可能已登出、過期、改過密碼）
+    public enum Validity: Equatable, Sendable {
+        case valid
+        /// 伺服器明確拒絕 → 需要重新登入
+        case expired
+        /// 連不上 pCloud 等，無法確認
+        case unknown(String)
+    }
+
+    /// 以 `userinfo` 實際驗證 token。被取消時拋出 `CancellationError`——呼叫端不可把取消當成失效
+    public static func validate(_ token: PCloudToken, region: PCloudRegion) async throws -> Validity {
+        let client = PCloudClient(region: region, token: token, options: .standard)
+        do {
+            _ = try await client.userEmail()
+            return .valid
+        } catch {
+            if error is CancellationError || Task.isCancelled { throw CancellationError() }
+            if case NetworkError.authenticationFailed = error { return .expired }
+            return .unknown(error.localizedDescription)
+        }
+    }
+
     /// 登出：讓 auth token 在伺服器端失效（盡力而為；OAuth token 無此 API，只刪鑰匙圈）
     public static func signOut(_ token: PCloudToken, region: PCloudRegion) async {
         guard token.kind == .session else { return }

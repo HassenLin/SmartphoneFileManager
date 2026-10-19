@@ -17,7 +17,11 @@ struct SmartphoneFileManagerApp: App {
                 .onAppear {
                     app.start()
                     AppearanceMode(rawValue: UserDefaults.standard.string(forKey: SettingsKey.appearance) ?? "")?.apply()
-                    appDelegate.onTerminate = { [app] in app.terminals.closeAll() }
+                    appDelegate.onTerminate = { [app] in
+                        app.terminals.closeAll()
+                        // adb 伺服器是 app 啟動的才關閉；Android Studio 等其他工具啟動的不動
+                        AdbServer.shutdownIfStartedByApp(executable: AdbLocator.resolve())
+                    }
                 }
         }
         .defaultSize(width: 1200, height: 760)
@@ -64,7 +68,7 @@ struct SmartphoneFileManagerApp: App {
     }
 }
 
-/// 關掉主視窗即結束 app；結束前關閉終端機的 adb 子行程，不留孤兒行程。
+/// 關掉主視窗即結束 app；結束前關閉終端機的 adb 子行程與 app 自己啟動的 adb 伺服器，不留常駐行程。
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var onTerminate: (@MainActor () -> Void)?
 

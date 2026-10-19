@@ -21,7 +21,7 @@ struct AccountEditorView: View {
     @State private var showOptions = false
     @State private var test: TestState = .idle
     @State private var signingIn = false
-    @State private var signedInToken = false
+    @State private var pcloudState: PCloudTokenStatus = .none
     /// pCloud 帳號啟用兩步驟驗證：等使用者輸入驗證碼
     @State private var twoFactor: PCloudLogin.TwoFactorRequired?
     @State private var twoFactorCode = ""
@@ -50,7 +50,7 @@ struct AccountEditorView: View {
 
     /// pCloud 正在登入（填 Email／密碼或驗證碼）：Return 要觸發「登入」／「驗證」而不是「儲存」——
     /// 儲存會重建本視圖，進行到一半的兩步驟驗證狀態就會遺失、回到輸入密碼
-    private var pcloudSigningIn: Bool { draft.protocol == .pcloud && !signedInToken }
+    private var pcloudSigningIn: Bool { draft.protocol == .pcloud && !pcloudState.showsAccount }
 
 
     var body: some View {
@@ -99,6 +99,7 @@ struct AccountEditorView: View {
             Text(errorMessage ?? "")
         }
         .onAppear(perform: loadSecrets)
+        .task(id: original.id) { await validatePCloudToken() }
         .onChange(of: draft.protocol) { _, _ in test = .idle }
     }
 
@@ -184,17 +185,19 @@ struct AccountEditorView: View {
             TextField("Start folder", text: $draft.rootPath, prompt: Text("/"))
         }
         Section("Sign-in") {
-            if signedInToken {
+            if pcloudState.showsAccount {
                 LabeledContent("Account") {
                     HStack {
-                        Label(draft.username.isEmpty ? String(localized: "Signed in") : draft.username,
-                              systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                        pcloudStatusLabel
                         Button("Sign Out") {
                             app.accounts.signOutPCloud(draft)
-                            signedInToken = false
+                            pcloudState = .none
                             test = .idle
                         }
                     }
+                }
+                if case let .unverified(reason) = pcloudState {
+                    Text("Could not check the sign-in: \(reason)").font(.caption).foregroundStyle(.secondary)
                 }
             } else if let pending = twoFactor {
                 TextField("Verification code", text: $twoFactorCode, prompt: Text("123456"))
@@ -208,6 +211,11 @@ struct AccountEditorView: View {
                     if signingIn { ProgressView().controlSize(.small) }
                 }
             } else {
+                if pcloudState == .expired {
+                    Label("Sign-in has expired. Enter your password to sign in again.",
+                          systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                }
                 TextField("Email", text: $draft.username)
                 SecureField("Password", text: $password)
                 HStack {
@@ -283,7 +291,7 @@ struct AccountEditorView: View {
     private func loadSecrets() {
         switch original.protocol {
         case .pcloud:
-            signedInToken = CredentialStore.pcloudToken(for: original) != nil
+            pcloudState = PCloudTokenStatus.initial(for: original)
         default:
             savedPassword = isNew ? "" : (CredentialStore.password(for: original) ?? "")
             password = savedPassword
@@ -373,7 +381,7 @@ struct AccountEditorView: View {
                 password = savedPassword
                 twoFactor = nil
                 twoFactorCode = ""
-                signedInToken = true
+                pcloudState = .valid
                 test = .success(changedRegion
                     ? String(localized: "Signed in — region set to \(session.region == .eu ? String(localized: "Europe") : String(localized: "United States")) for this account")
                     : String(localized: "Signed in"))
@@ -383,6 +391,31 @@ struct AccountEditorView: View {
                 test = .failure(.server(error.localizedDescription))
             }
         }
+    }
+
+    @ViewBuilder
+    private var pcloudStatusLabel: some View {
+        let account = draft.username.isEmpty ? String(localized: "Signed in") : draft.username
+        switch pcloudState {
+        case .checking:
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text("Checking sign-in…").foregroundStyle(.secondary)
+            }
+        case .unverified:
+            Label(account, systemImage: "questionmark.circle").foregroundStyle(.secondary)
+        default:
+            Label(account, systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+        }
+    }
+
+    /// 開啟時驗證鑰匙圈中的 pCloud token。被取消（視窗關閉、換帳號）時什麼都不改——取消不是失效
+    private func validatePCloudToken() async {
+        guard original.protocol == .pcloud, !isNew, CredentialStore.pcloudToken(for: original) != nil else { return }
+        if pcloudState == .none { pcloudState = .checking }
+        guard let status = await PCloudTokenStatus.check(original),
+              pcloudState == .checking else { return }   // 驗證期間使用者已登出／重新登入
+        pcloudState = status
     }
 
     private func chooseKey() {

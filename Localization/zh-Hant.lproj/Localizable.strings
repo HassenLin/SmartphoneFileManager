@@ -97,6 +97,8 @@
 "Cannot read device info" = "無法讀取裝置資訊";
 "Charging" = "充電中";
 "Check Again" = "重新檢查";
+"Checking sign-in…" = "正在確認登入狀態…";
+"Checking…" = "確認中…";
 "Choose Folder…" = "選擇資料夾…";
 "Choose a private key file." = "請選擇私鑰檔案。";
 "Choose a source" = "選擇來源";
@@ -152,6 +154,7 @@
 "Copying from the device is disabled for read-only folders." = "唯讀資料夾無法接收從裝置複製的檔案。";
 "Copying to Mac" = "正在複製到 Mac";
 "Copying to device" = "正在複製到裝置";
+"Could not check the sign-in: %@" = "無法確認登入狀態：%@";
 "Could not save the sign-in to the keychain." = "無法把登入資訊存進鑰匙圈。";
 "Create" = "建立";
 "Create a pCloud app…" = "建立 pCloud App…";
@@ -533,10 +536,13 @@
 "Sign In with Browser…" = "用瀏覽器登入…";
 "Sign In with pCloud…" = "使用 pCloud 登入…";
 "Sign Out" = "登出";
+"Sign in again" = "請重新登入";
 "Sign in with pCloud in the account settings." = "請在帳號設定中使用 pCloud 登入。";
 "Sign-in" = "登入";
 "Sign-in failed: %@" = "登入失敗：%@";
+"Sign-in has expired. Enter your password to sign in again." = "登入已失效，請輸入密碼重新登入。";
 "Signed in" = "已登入";
+"Signed in (unconfirmed)" = "已登入（未確認）";
 "Signed in — region set to %@ for this account" = "已登入 — 此帳號的資料中心已設為%@";
 "Simultaneous transfers" = "同時傳輸數";
 "Size" = "大小";
@@ -666,6 +672,7 @@
 "nas.local or 192.168.1.10" = "nas.local 或 192.168.1.10";
 "pCloud browser sign-in (optional)" = "pCloud 瀏覽器登入（選用）";
 "pCloud sign-in" = "pCloud 登入";
+"pCloud sign-in has expired. Edit the account and sign in again. (%@)" = "pCloud 登入已失效，請編輯帳號重新登入。（%@）";
 "rsync (Mac ↔ Mac)" = "rsync（Mac ↔ Mac）";
 "rsync: %lld file(s) updated, %lld item(s) deleted" = "rsync：更新 %1$lld 個檔案、刪除 %2$lld 個項目";
 "scrcpy is installed" = "scrcpy 已安裝";

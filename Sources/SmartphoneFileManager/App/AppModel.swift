@@ -118,10 +118,29 @@ final class AppModel {
         Self.removeStaleTemporaryFiles()
         devices.start()
         refreshSources()
-        // adb 無法執行時（例如設定指向不存在的路徑）一啟動就開安裝導引，而不是讓使用者面對空窗格
+    }
+
+    /// 是否需要 adb：有窗格選了 Android，或有涉及 Android 的待執行工作（排隊、執行中、等待回答）。
+    /// 只有這時才輪詢 adb——任何 adb 指令都會啟動常駐的 adb 伺服器（見 `DeviceMonitor.adbWanted`）
+    var needsAdb: Bool {
+        [left, right].contains { $0.sourceID?.kind == .android }
+            || queue.jobs.contains { job in
+                [.pending, .running, .waitingForUser].contains(job.state)
+                    && (job.source.kind == .android || job.destination?.kind == .android)
+            }
+    }
+
+    /// `needsAdb` 變動時呼叫（主視窗 onChange）
+    func updateAdbWanted() {
+        let wanted = needsAdb
+        guard devices.adbWanted != wanted else { return }
+        devices.adbWanted = wanted
+        guard wanted else { return refreshSources() }
         Task {
             await devices.refresh()
+            // adb 無法執行（例如設定指向不存在的路徑）：開安裝導引，而不是讓使用者面對空窗格
             if devices.adbError != nil, sheet == nil { sheet = .setupGuide(.android) }
+            refreshSources()
         }
     }
 
@@ -153,6 +172,11 @@ final class AppModel {
 
     var sourceOptions: [SourceOption] {
         var options = [SourceOption(id: .mac, title: String(localized: "This Mac"), symbol: "laptopcomputer", enabled: true)]
+        // adb 尚未啟用（或還沒找到裝置）：放一個「Android」項目，選了才啟動 adb，找到裝置後自動換成該裝置
+        if devices.devices.isEmpty {
+            options.append(SourceOption(id: Self.anyAndroid, title: String(localized: "Android"),
+                                        symbol: "candybarphone", enabled: true))
+        }
         for device in devices.devices {
             options.append(SourceOption(id: .android(device.serial),
                                         title: device.isReady ? device.displayName : "\(device.displayName) — \(device.state)",
@@ -179,8 +203,12 @@ final class AppModel {
         }
     }
 
+    /// 來源選單的「Android」：尚未指定裝置（序號空白，與舊版書籤的「任一台 Android」同一表示法）
+    static let anyAndroid = SourceID.android("")
+
     func title(for id: SourceID?) -> String {
         guard let id else { return String(localized: "Choose a source") }
+        if id == Self.anyAndroid { return String(localized: "Android") }
         if let option = sourceOptions.first(where: { $0.id == id }) { return option.title }
         switch id.kind {
         case .network: return accounts.account(for: id)?.displayName ?? String(localized: "Network account (deleted)")
@@ -305,10 +333,17 @@ final class AppModel {
 
     /// 裝置清單變動時呼叫：更新兩窗格的來源可用性；右窗格尚未選擇時自動選第一台裝置
     func refreshSources() {
+        // 只自動選已連上的裝置，不自動連網路帳號；也不自動選「Android」項目（那會啟動 adb）
         if right.sourceID == nil, !didAutoSelectRight,
-           let first = sourceOptions.first(where: { $0.id != .mac && $0.enabled }) {   // 只自動選裝置，不自動連網路帳號
+           let first = sourceOptions.first(where: { $0.id != .mac && $0.id != Self.anyAndroid && $0.enabled }) {
             didAutoSelectRight = true
             selectSource(first.id, for: .right)
+        }
+        // 選了「Android」的窗格：adb 找到可用的裝置就換成該裝置
+        if let device = devices.devices.first(where: \.isReady) {
+            for side in [PaneSide.left, .right] where pane(side).sourceID == Self.anyAndroid {
+                selectSource(.android(device.serial), for: side)
+            }
         }
         left.updateResolved(resolve(left.sourceID))
         right.updateResolved(resolve(right.sourceID))
@@ -354,6 +389,8 @@ final class AppModel {
             } else if let device = devices.devices.first(where: \.isReady) {
                 source = .android(device.serial)
             } else {
+                // 還沒有可用的裝置（adb 可能尚未啟用）：窗格先切到「Android」以啟動 adb，找到裝置後自動換過去
+                if pane(side).sourceID != Self.anyAndroid { selectSource(Self.anyAndroid, for: side) }
                 return toasts.error(AdbError.noDevice)
             }
         }
