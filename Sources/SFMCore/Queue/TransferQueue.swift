@@ -71,6 +71,8 @@ public final class TransferQueue {
     @ObservationIgnored private let store: QueueStore
     @ObservationIgnored private var tasks: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored private var stopRequested: Set<UUID> = []
+    /// 剛開始傳輸、還沒收到第一次進度回報的檔案節點：第一次回報只當起點（見 `applyProgress`）
+    @ObservationIgnored private var awaitingBaseline: Set<UUID> = []
     @ObservationIgnored private var answers: [UUID: CheckedContinuation<ConflictAction, Never>] = [:]
 
     public init(store: QueueStore = .standard) {
@@ -315,11 +317,13 @@ public final class TransferQueue {
             if state != .running {
                 fileLanes[id]?[nodeID] = nil
                 fileRates[nodeID] = nil
+                awaitingBaseline.remove(nodeID)
                 save()
             }
         case let .fileStarted(nodeID, lane):
             fileLanes[id, default: [:]][nodeID] = lane
             fileRates[nodeID] = TransferRate()
+            awaitingBaseline.insert(nodeID)
         case let .expand(nodeID, children):
             jobs[index].updateNode(nodeID) {
                 $0.children = children
@@ -340,9 +344,17 @@ public final class TransferQueue {
         var moved: Int64 = 0
         var perFile: [UUID: Int64] = [:]
         for (nodeID, bytes) in updates {
+            // 每個檔案開始後的第一次回報只當起點、不算速率：續傳時它是目的端「已有的大小」，
+            // 而節點記錄的 transferred 可能是 0（依規則續傳的新節點）或落後（pCloud 伺服器收到的比記錄多），
+            // 差額算進來會讓速率暴衝、剩餘時間跟著錯。新傳的檔案只少算第一次回報的一點點
+            let isBaseline = awaitingBaseline.remove(nodeID) != nil
             jobs[index].updateNode(nodeID) {
                 guard $0.state == .running else { return }
-                // 只累計增量：續傳的第一次回報是「已有的大小」，與節點保存的 transferred 相近，不會灌高速率
+                if isBaseline {
+                    $0.transferred = bytes
+                    return
+                }
+                // 只累計增量（重試後的回報可能比記錄小：不算負值）
                 let delta = max(0, bytes - $0.transferred)
                 moved += delta
                 perFile[nodeID] = delta

@@ -26,6 +26,8 @@ final class FakeStore: @unchecked Sendable {
     /// 指定檔案接下來幾次下載要拋出的錯誤（依序取用；用完即正常下載），與每個檔案的下載嘗試次數
     var failures: [String: [Error]] = [:]
     var attempts: [String: Int] = [:]
+    /// 指定檔案下載時依序回報的進度與之後的等待（模擬續傳：第一次回報即為已有的大小）
+    var progressSteps: [String: [(fraction: Double, pause: Duration)]] = [:]
 
     func with<T>(_ body: (FakeStore) throws -> T) rethrows -> T {
         lock.lock(); defer { lock.unlock() }
@@ -109,6 +111,10 @@ struct FakeSource: FileSource {
         }
         if let failure { throw failure }
         try await Task.sleep(for: store.with { $0.delays[path] } ?? delay)
+        for step in store.with({ $0.progressSteps[path] }) ?? [] {
+            onProgress(step.fraction)
+            try await Task.sleep(for: step.pause)
+        }
         let (dirs, files) = store.with { s in
             (s.directories.filter { $0 == path || $0.hasPrefix(path + "/") },
              s.files.filter { $0.key == path || $0.key.hasPrefix(path + "/") })

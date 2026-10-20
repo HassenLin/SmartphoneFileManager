@@ -727,6 +727,30 @@ struct TransferRetryTests {
         #expect(store.files["/a/keep.bin"] == nil)
     }
 
+    /// 續傳的第一次進度回報是「目的已有的大小」，不是這一秒傳的量：不可灌進速率（否則速率暴衝、剩餘時間錯）
+    @Test func resumedBytesDoNotInflateRate() async throws {
+        let size = 1_000_000
+        let store = FakeStore()
+        store.directories.insert("/a")
+        store.files["/a/big.bin"] = Data(count: size)
+        store.progressSteps["/a/big.bin"] = [(0.9, .milliseconds(1200)), (0.95, .milliseconds(300))]
+        let cloud = FakeSource(id: .network(UUID()), store: store, nativeCopy: false)
+        let other = FakeSource(id: .network(UUID()), store: FakeStore(), nativeCopy: false)
+        other.store.directories.insert("/b")
+        let queue = TransferQueue(store: QueueStore(directory: storeDirectory))
+        queue.resolver = { [cloud, other] id in id == cloud.id ? cloud : id == other.id ? other : nil }
+        let id = try #require(queue.enqueue(.copy, items: [FileItem(path: "/a/big.bin", isDirectory: false, size: Int64(size))],
+                                            from: cloud.id, to: other.id, directory: "/b"))
+        var rate: Double?
+        for _ in 0..<300 where rate == nil && queue.job(id)?.state.isFinished != true {
+            rate = queue.rates[id]?.bytesPerSecond
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        // 實際只傳了 5%（50 KB）約 1.2 秒；算進已有的 90% 會是約 800 KB/s
+        let measured = try #require(rate)
+        #expect(measured < Double(size) * 0.2)
+    }
+
     @Test func classifiesErrors() {
         // 外接磁碟暫時讀不到：Foundation 把 POSIX ENXIO（尚未設定裝置）包在 NSUnderlyingError 裡
         let wrapped = NSError(domain: NSCocoaErrorDomain, code: NSFileReadUnknownError,
