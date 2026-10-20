@@ -84,6 +84,7 @@
 "Browse…" = "瀏覽…";
 "Bundle ID" = "Bundle ID";
 "Bundled (recommended)" = "內附（建議）";
+"By rule:" = "依條件：";
 "CPU" = "CPU";
 "Cancel" = "取消";
 "Cancel running adb commands (⌘.)" = "取消執行中的 adb 指令（⌘.）";
@@ -195,6 +196,8 @@
 "Device Info" = "裝置資訊";
 "Device Info…" = "裝置資訊…";
 "Device is %@" = "裝置狀態：%@";
+"Device reports UTC: add the local time zone" = "裝置回報 UTC：加上本機時區";
+"Device time was read as UTC but is local: subtract the local time zone" = "裝置時間其實是本機時間卻被當成 UTC：減去本機時區";
 "Device tools" = "裝置工具";
 "Device unauthorized — accept the debugging prompt on the device" = "裝置未授權——請在裝置上允許 USB 偵錯";
 "Direction" = "方向";
@@ -228,6 +231,7 @@
 "Entering device shell...\n" = "正在進入裝置 shell…\n";
 "Error" = "錯誤";
 "Europe" = "歐洲";
+"Example" = "範例";
 "Exclude (comma separated, e.g. *.tmp, node_modules)" = "排除（逗號分隔，例如 *.tmp, node_modules）";
 "Executable not found: %@" = "找不到執行檔：%@";
 "Execute" = "執行";
@@ -376,6 +380,7 @@
 "No Account Selected" = "未選取帳號";
 "No Android device" = "無 Android 裝置";
 "No Android device connected" = "未連接 Android 裝置";
+"No Offset" = "不位移";
 "No device" = "無裝置";
 "No device connected" = "未連接裝置";
 "No iPhone connected" = "沒有連接的 iPhone";
@@ -398,6 +403,7 @@
 "Now: %@" = "目前：%@";
 "OK" = "好";
 "Off = use the default from Settings → Network" = "不勾選＝沿用 設定 → 網路 的預設值";
+"Offset: %@" = "位移：%@";
 "On the Android phone" = "在 Android 手機上";
 "On the iPhone" = "在 iPhone 上";
 "One “set name value” per line, e.g. set ftp:use-feat no" = "每行一條「set 名稱 值」，例如 set ftp:use-feat no";
@@ -423,6 +429,9 @@
 "Over voltage" = "過壓";
 "Overheat" = "過熱";
 "Overwrite" = "覆寫";
+"Overwrite only when the sizes differ; skip files of the same size" = "大小不同才覆寫；大小相同就略過";
+"Overwrite only when the source is newer; skip when the destination is as new or newer" = "來源較新才覆寫；目的檔一樣新或較新就略過（日期不明時也略過）";
+"Overwrite when the sizes differ or the source is newer; otherwise skip" = "大小不同或來源較新就覆寫；否則略過";
 "Owner" = "擁有者";
 "Pair" = "配對";
 "Pairing code" = "配對碼";
@@ -472,6 +481,7 @@
 "Rename" = "重新命名";
 "Renamed" = "已重新命名";
 "Rename…" = "重新命名…";
+"Reported" = "裝置回報";
 "Restart" = "重新開機";
 "Restart ADB Server" = "重新啟動 ADB Server";
 "Restart iPhone" = "重新開機 iPhone";
@@ -532,6 +542,7 @@
 "Show hidden files" = "顯示隱藏檔";
 "Show in Finder" = "在 Finder 中顯示";
 "Show password" = "顯示密碼";
+"Shown" = "顯示為";
 "Shut Down" = "關機";
 "Shut Down iPhone" = "將 iPhone 關機";
 "Sign In" = "登入";
@@ -553,8 +564,14 @@
 "Size (smallest)" = "大小（最小）";
 "Size mismatch after resuming the upload" = "續傳上傳後大小不符";
 "Skip" = "略過";
+"Skip If Not Newer" = "來源沒有較新就略過";
+"Skip If Same Size" = "大小相同就略過";
+"Skip If Same Size and Not Newer" = "大小相同且來源沒有較新就略過";
+"Skip Same Size, Resume Smaller" = "大小相同略過、較小續傳";
+"Skip files of the same size; continue a smaller destination file from where it stopped (overwrite when resuming is not possible or the destination is larger)" = "大小相同就略過；目的檔較小時從中斷處接著傳（不能續傳或目的檔較大時覆寫）";
 "Skip files that already exist in the destination" = "略過目的端已存在的檔案";
 "Smartphone File Manager" = "手機檔案管理器";
+"Some devices report file times in UTC, others in local time. If times in this pane are off by a few hours, set an offset. It applies to the file list, conflict comparisons (newer / not newer) and sync." = "有的裝置回報的檔案時間是 UTC，有的是本機時間。這個窗格的時間差了幾小時的話，在這裡設定位移。會套用到檔案列表、衝突的新舊比較與同步。";
 "Some items failed. See the task list for details." = "部分項目失敗，詳情請見工作清單。";
 "Sort" = "排序";
 "Sort By" = "排序方式";
@@ -605,6 +622,9 @@
 "This cannot be undone." = "此動作無法復原。";
 "This is a virtual folder and cannot be changed" = "這是虛擬資料夾，無法變更";
 "This is a virtual folder. Open Media or an app folder first." = "這是虛擬資料夾，請先開啟 Media 或某個 App 的資料夾。";
+"Time Offset (%@)…" = "時間位移（%@）…";
+"Time Offset: %@" = "時間位移：%@";
+"Time Offset…" = "時間位移…";
 "Time Zone" = "時區";
 "Timeout (seconds)" = "逾時（秒）";
 "Transfer" = "傳輸";

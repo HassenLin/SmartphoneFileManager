@@ -68,6 +68,8 @@ public enum AdbLocator {
 public enum SettingsKey {
     public static let adbMode = "adbMode"
     public static let customAdbPath = "customAdbPath"
+    /// 各來源的時間位移（分鐘），見 TimeShiftedSource
+    public static let timeOffsets = "sourceTimeOffsets"
     public static let showHiddenFiles = "showHiddenFiles"
     public static let defaultSortType = "defaultSortType"
     public static let defaultExportDirectory = "defaultExportDir"

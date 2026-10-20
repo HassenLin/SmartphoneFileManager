@@ -127,6 +127,8 @@ struct MainWindowView: View {
             EditorView(model: model)
         case let .setupGuide(topic):
             SetupGuideView(app: app, topic: topic)
+        case let .timeOffset(side):
+            TimeOffsetSheet(app: app, side: side)
         }
     }
 }

@@ -3,6 +3,7 @@ import SwiftUI
 
 /// 目的已有同名檔案時的處理選擇（類似 FTP 客戶端）：並列來源與目的的大小、修改日期。
 /// 「續傳」只在目的比來源小、且兩端都支援續傳時提供。
+/// 第二排是條件式的選擇（條件成立覆寫、否則略過），搭配「套用到全部」時每個檔案各自判斷。
 struct ConflictSheet: View {
     let conflict: TransferConflict
     let queue: TransferQueue
@@ -31,6 +32,21 @@ struct ConflictSheet: View {
 
             Toggle("Apply to all remaining conflicts in this task", isOn: $applyToAll)
 
+            // 條件式選擇：兩欄排列（四個按鈕一排放不下）
+            Text("By rule:").font(.callout).foregroundStyle(.secondary)
+            LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)],
+                      alignment: .leading, spacing: 6) {
+                Button("Skip If Same Size") { answer(.overwriteIfDifferentSize) }
+                    .help("Overwrite only when the sizes differ; skip files of the same size")
+                Button("Skip If Not Newer") { answer(.overwriteIfNewer) }
+                    .help("Overwrite only when the source is newer; skip when the destination is as new or newer")
+                Button("Skip If Same Size and Not Newer") { answer(.overwriteIfDifferentSizeOrNewer) }
+                    .help("Overwrite when the sizes differ or the source is newer; otherwise skip")
+                Button("Skip Same Size, Resume Smaller") { answer(.resumeIfSmaller) }
+                    .help("Skip files of the same size; continue a smaller destination file from where it stopped (overwrite when resuming is not possible or the destination is larger)")
+            }
+            .controlSize(.small)
+
             HStack {
                 Button("Skip") { answer(.skip) }
                 Spacer()
@@ -45,7 +61,7 @@ struct ConflictSheet: View {
             }
         }
         .padding(20)
-        .frame(width: 520)
+        .frame(width: 600)
     }
 
     private func row(_ title: String, _ stat: FileStat, path: String) -> some View {

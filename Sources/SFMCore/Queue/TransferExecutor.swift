@@ -397,15 +397,14 @@ struct TransferExecutor: Sendable {
     }
 
     private func resolveConflict(_ node: TransferNode, target: String, existing: FileStat,
-                                 allowResume: Bool) async throws -> ConflictAction {
+                                 allowResume: Bool) async throws -> ConflictResolution {
         let sourceStat = (try? await source.stat(node.sourcePath))
             ?? FileStat(size: node.size, modified: nil, isDirectory: node.isDirectory)
         let conflict = TransferConflict(jobID: jobID, name: RemotePath.name(of: target), sourcePath: node.sourcePath,
                                         targetPath: target, source: sourceStat, target: existing, canResume: allowResume)
         let action = await ask(conflict)
         try Task.checkCancellation()
-        // 「套用到全部」選了續傳、但這個檔案不能續傳時改為覆寫（FTP 客戶端的慣例）
-        return action == .resume && !allowResume ? .overwrite : action
+        return action.resolve(source: sourceStat, target: existing, canResume: allowResume)
     }
 
     private func uniqueTarget(_ target: String, in source: any FileSource) async throws -> String {

@@ -21,6 +21,7 @@ enum ActiveSheet: Identifiable {
     case imagePreview(ImagePreviewModel)
     case editor(EditorModel)
     case setupGuide(SetupTopic)
+    case timeOffset(PaneSide)
 
     var id: String {
         switch self {
@@ -39,6 +40,7 @@ enum ActiveSheet: Identifiable {
         case let .imagePreview(model): return "image:\(model.item.path)"
         case let .editor(model): return "editor:\(model.item.path)"
         case let .setupGuide(topic): return "setup:\(topic.rawValue)"
+        case let .timeOffset(side): return "timeOffset:\(side)"
         }
     }
 }
@@ -230,9 +232,14 @@ final class AppModel {
         }
     }
 
-    /// 把 SourceID 解析成可用的來源；裝置未連線／未授權／工具未安裝時為 nil
+    /// 把 SourceID 解析成可用的來源；裝置未連線／未授權／工具未安裝時為 nil。
+    /// 有設定時間位移的來源包上 `TimeShiftedSource`（窗格、工作佇列都經過這裡，時間一致）
     func resolve(_ id: SourceID?) -> (any FileSource)? {
-        guard let id else { return nil }
+        guard let id, let source = resolveUnshifted(id) else { return nil }
+        return TimeShiftedSource.wrap(source, offset: TimeInterval(timeOffset(for: id) * 60))
+    }
+
+    private func resolveUnshifted(_ id: SourceID) -> (any FileSource)? {
         switch id.kind {
         case .mac:
             return MacFileSource()
@@ -247,6 +254,26 @@ final class AppModel {
             return MTPDeviceManager.shared.source(serial: id.deviceID)
         case .network:
             return networkSource(id)
+        }
+    }
+
+    // MARK: 時間位移
+
+    /// 各來源的時間位移（分鐘，鍵見 `timeOffsetKey`）：有的裝置回報 UTC、有的回報本機時間，見 `TimeShiftedSource`
+    private(set) var timeOffsets: [String: Int] =
+        UserDefaults.standard.dictionary(forKey: SettingsKey.timeOffsets) as? [String: Int] ?? [:]
+
+    /// 以 SourceID 的種類＋裝置識別（序號、UDID、帳號 UUID）為鍵，裝置重新連接後仍套用
+    static func timeOffsetKey(_ id: SourceID) -> String { "\(id.kind.rawValue):\(id.deviceID)" }
+
+    func timeOffset(for id: SourceID) -> Int { timeOffsets[Self.timeOffsetKey(id)] ?? 0 }
+
+    /// 設定後以新的位移重新載入正在顯示該來源的窗格
+    func setTimeOffset(_ minutes: Int, for id: SourceID) {
+        timeOffsets[Self.timeOffsetKey(id)] = minutes == 0 ? nil : minutes
+        UserDefaults.standard.set(timeOffsets, forKey: SettingsKey.timeOffsets)
+        for side in [PaneSide.left, .right] where pane(side).sourceID == id {
+            pane(side).replaceSource(resolve(id))
         }
     }
 

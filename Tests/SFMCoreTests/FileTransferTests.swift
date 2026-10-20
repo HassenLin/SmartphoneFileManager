@@ -257,3 +257,27 @@ struct MacFileSourceVolumeTests {
         }
     }
 }
+
+@Suite("TimeShiftedSource")
+struct TimeShiftedSourceTests {
+    /// 列表與 stat 的修改時間都加上位移（顯示、衝突比較、同步都經過這兩個方法），其餘屬性照原來源
+    @Test func shiftsListAndStat() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("a.txt")
+        try Data("a".utf8).write(to: file)
+        let reported = Date(timeIntervalSince1970: 1_700_000_000)
+        try FileManager.default.setAttributes([.modificationDate: reported], ofItemAtPath: file.path)
+
+        let shifted = TimeShiftedSource.wrap(MacFileSource(), offset: 8 * 3600)
+        #expect(try await shifted.stat(file.path)?.modified == reported.addingTimeInterval(8 * 3600))
+        #expect(try await shifted.list(dir.path, includeHidden: true).first?.modified == reported.addingTimeInterval(8 * 3600))
+        #expect(shifted.id == .mac)
+        #expect(shifted.unwrapped is MacFileSource)
+        // 位移 0 不包裝；重複包裝不疊加
+        #expect(TimeShiftedSource.wrap(MacFileSource(), offset: 0) is MacFileSource)
+        let rewrapped = TimeShiftedSource.wrap(shifted, offset: 3600)
+        #expect(try await rewrapped.stat(file.path)?.modified == reported.addingTimeInterval(3600))
+    }
+}

@@ -131,7 +131,9 @@ public struct TransferNode: Codable, Sendable, Identifiable, Hashable {
     public var isUnexpanded: Bool { expanded == false }
 }
 
-/// 衝突處理方式（類似 FTP 客戶端）
+/// 衝突處理方式（類似 FTP 客戶端）：使用者在衝突對話框的回答，也是「套用到全部」保存的政策。
+/// 前四種直接執行；條件式的（`overwriteIf…`）依兩端的大小／修改時間決定覆寫或略過（見 `resolve`），
+/// 所以套用到全部時每個檔案各自判斷。
 public enum ConflictAction: String, Codable, Sendable, CaseIterable {
     /// 從目的檔大小接著傳（目的比來源小、且兩端都支援續傳才提供）
     case resume
@@ -140,6 +142,44 @@ public enum ConflictAction: String, Codable, Sendable, CaseIterable {
     /// 保留兩者，新檔案改名（`a 2.txt`）
     case rename
     case skip
+    /// 大小不同才覆寫，相同就略過
+    case overwriteIfDifferentSize
+    /// 來源較新才覆寫，否則（目的一樣新或較新、日期不明）略過
+    case overwriteIfNewer
+    /// 大小不同或來源較新才覆寫，否則略過
+    case overwriteIfDifferentSizeOrNewer
+    /// 大小相同略過；目的較小且能續傳就接著傳（中斷的大檔）；其餘（目的較大、不能續傳）覆寫
+    case resumeIfSmaller
+
+    /// 比較修改時間的容許誤差：FAT（記憶卡）只精確到 2 秒，複製後時間可能差一點
+    static let timeTolerance: TimeInterval = 2
+
+    /// 對單一衝突實際執行的動作
+    public func resolve(source: FileStat, target: FileStat, canResume: Bool) -> ConflictResolution {
+        let differentSize = source.size != target.size
+        // 任一端沒有日期時無法確定「來源較新」：不覆寫（略過不會毀掉資料）
+        let sourceNewer = source.modified.flatMap { s in
+            target.modified.map { s.timeIntervalSince($0) > Self.timeTolerance }
+        } ?? false
+        switch self {
+        // 「套用到全部」選了續傳、但這個檔案不能續傳時改為覆寫（FTP 客戶端的慣例）
+        case .resume: return canResume ? .resume : .overwrite
+        case .overwrite: return .overwrite
+        case .rename: return .rename
+        case .skip: return .skip
+        case .overwriteIfDifferentSize: return differentSize ? .overwrite : .skip
+        case .overwriteIfNewer: return sourceNewer ? .overwrite : .skip
+        case .overwriteIfDifferentSizeOrNewer: return differentSize || sourceNewer ? .overwrite : .skip
+        case .resumeIfSmaller:
+            if !differentSize { return .skip }
+            return target.size < source.size && canResume ? .resume : .overwrite
+        }
+    }
+}
+
+/// 對單一衝突實際執行的動作（`ConflictAction.resolve` 的結果）
+public enum ConflictResolution: Sendable, Equatable {
+    case resume, overwrite, rename, skip
 }
 
 /// 等待使用者決定的衝突

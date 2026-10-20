@@ -28,7 +28,7 @@
 
 ![工作佇列：已暫停、已完成的工作，檔案層級的狀態](docs/screenshots/queue.png)
 
-**衝突對話框**：目的已有同名檔案時並列大小與日期；目的較小時可從中斷處續傳
+**衝突對話框**：目的已有同名檔案時並列大小與日期；目的較小時可從中斷處續傳；另有依條件（大小、新舊）略過／覆寫／續傳的選擇
 
 ![衝突對話框：續傳／覆寫／保留兩者／略過](docs/screenshots/conflict.png)
 
@@ -51,13 +51,14 @@
 | 刪除 | Delete 鍵或右鍵；Mac 為移到垃圾桶，裝置為永久刪除（含資料夾內容），皆會確認 |
 | 窗格互傳 | 右鍵「複製／移動到另一窗格」、拖放（窗格 ⇄ 窗格、Finder → 窗格、Mac 窗格 → Finder；裝置檔案存到 Mac 用「匯出」或拖到 Mac 窗格）；同 Finder：同一來源且同一磁碟區／儲存空間（移動只是改名）拖放為移動，跨磁碟（兩顆外接碟之間、手機內部 ↔ SD 卡）為拷貝；按住 Option 一律拷貝、⌘ 一律移動；不同來源及 Finder 拖入為拷貝 |
 | 工作佇列 | 拷貝／移動／刪除都進入底部「工作」面板（可收合、可調高度）：樹狀展開到檔案、各自進度；**立即開始**（資料夾執行到才列出內容，不先掃描整棵樹），顯示百分比、速率與預估剩餘時間（仍在掃描時標「至少」）；並行時每個執行器一條進度（主執行器藍色、子執行器各自顏色，含檔名、百分比、速率、剩餘時間），樹狀清單中傳輸中的檔案用同樣顏色；**暫時性錯誤自動重試**：斷線、逾時、外接磁碟暫時讀不到或被卸載時，等 5 秒～5 分鐘（共約 17 分鐘）從已傳的部分接著傳，期間顯示「N 秒後重試」；網路帳號可在選項設「同時傳輸數」並行傳輸：≥ 2 時 1 個主執行器專給大檔（門檻預設 200 MB，可調）、其餘子執行器傳小檔（子執行器小檔優先、沒有小檔時也跑大檔；主執行器大檔優先，沒有大檔時接手子執行器正在下載的大檔以多連線續傳，再沒有才做小檔；只用於雲端／網路帳號）；主執行器一律以多條連線下載、子執行器單一連線（N = 1 時唯一的執行器即主執行器，每個下載都多連線）（「大檔同時連線數」：WebDAV／pCloud 分區塊 Range、FTP／SFTP `pget -n`）；暫停／繼續／停止／移除；每台裝置一次一個工作（不同裝置並行）；**關閉 app 後保留**，重開時為暫停、按繼續才執行；還有傳輸在進行時關閉主視窗或 ⌘Q 會先詢問「確定要結束嗎？」（詢問附在主視窗上，取消則一切不變、繼續傳輸） |
-| 衝突與續傳 | 目的已有同名檔案時詢問（類似 FTP）：並列兩邊大小與日期，可選續傳／覆寫／保留兩者／略過，可套用到其餘衝突；資料夾同名則合併。大檔從中斷處續傳：Android（`tail -c`／`exec-in`／`dd`）、MTP（Partial Object）、Mac；iPhone（AFC 無法指定位置）一律重傳 |
+| 衝突與續傳 | 目的已有同名檔案時詢問（類似 FTP）：並列兩邊大小與日期，可選續傳／覆寫／保留兩者／略過，或依條件：大小相同就略過、來源沒有較新就略過、大小相同且來源沒有較新就略過、大小相同略過且較小續傳（條件成立覆寫或續傳、否則略過；比較時間容許 2 秒誤差、日期不明視為非較新），可套用到其餘衝突（每個檔案各自判斷）；資料夾同名則合併。大檔從中斷處續傳：Android（`tail -c`／`exec-in`／`dd`）、MTP（Partial Object）、Mac；iPhone（AFC 無法指定位置）一律重傳 |
 | 傳輸路徑 | 同裝置同檔案系統為原生 mv（瞬間）；其餘逐檔傳輸：同裝置原生 cp（不經 Mac）、跨裝置經 Mac 中繼（暫存於 Application Support，可續傳）；跨檔案系統搬移會預檢空間 |
 | 檔案操作 | 新增資料夾（＋選單、右鍵、⇧⌘N 作用在最後操作的窗格）/檔案、改名、權限（Android chmod）、路徑列右鍵拷貝路徑、**從 Finder 把檔案或資料夾拖到路徑列＝窗格切到這台 Mac 並開啟該位置**（檔案則開啟所在資料夾並選取）、遞迴搜尋（Android）、排序（點名稱／大小／修改日期欄位標題，或排序選單）、篩選 |
 | 編輯器 | 任一來源的文字檔：語法上色、⌘F／⌥⌘F、undo、編碼偵測與切換、無損存檔 |
 | Android 工具 | 工具列「Android」按鈕彈出視窗：選擇目標裝置；終端機（多分頁）、App 管理、裝置資訊、重開機、截圖、寫入剪貼簿、scrcpy 鏡像、無線配對／連線 |
 | iPhone 工具 | 工具列「iPhone」按鈕彈出視窗：選擇目標 iPhone；裝置資訊（機型、iOS、電池、儲存空間）、重新開機／關機、App 管理（列出、安裝 .ipa、解除安裝）。iOS 17 起 libimobiledevice 無法截圖，故不提供 |
 | 書籤（兩種） | 窗格的書籤選單：**資料夾書籤**（任何來源，含裝置）與**同步專案**（左右一對資料夾＋方向＋選項）；只列窗格目前裝置的項目（同步專案：任一邊在此裝置），其他裝置的收在「其他裝置」子選單；選同步專案會把左右窗格開到該資料夾並開啟同步視窗。存於 `Application Support/SmartphoneFileManager/bookmarks.json`，首次啟動匯入舊版 `~/.adbfilemanager/bookmarks.json` |
+| 時間位移 | 有的裝置回報 UTC、有的回報本機時間：窗格來源選單「時間位移…」為每個裝置／網路帳號設定位移（±14 小時、30 分鐘一格，快速鍵 ± 本機時區），以窗格中的檔案即時預覽；套用到檔案列表、衝突的新舊比較與同步。依裝置序號／UDID／帳號保存 |
 | 同步（類似 rsync） | 工具列「同步」：彈出視窗含專案名稱、方向（左 → 右／左 ← 右／左 ↔ 右 雙向）、選項與「取消／儲存／同步」；同步時若選項有變先儲存再執行（加入工作佇列，可暫停／繼續）。**兩邊都是 Mac** 直接執行 rsync（`-a`＋檢查碼、延伸屬性、額外參數）；其他組合用內建引擎，提供來源做得到的選項：刪除多餘、隱藏檔、排除樣式、只比大小、略過已存在。雙向：各以較新的檔案為準、不刪除（Mac ↔ Mac 為兩趟 `rsync -a --update`） |
 | 網路帳號 | 「檔案 → 網路帳號…」（⌥⌘K）或來源選單：**帳號清單**（名稱／協定／伺服器／帳號／密碼遮罩可顯示／安全性／使用中；新增、複製、刪除、上移下移＝來源選單順序、在左／右窗格開啟）、**帳號設定**（主機、埠、加密、主動／被動、SFTP 私鑰、pCloud 地區與登入、起始資料夾、測試連線、憑證不受信任時一鍵釘選）、**選項視窗**（逾時、重試、連線數、閒置、檔名編碼如 Big5、伺服器時區、主動模式外部 IP／埠範圍、驗證憑證、TLS 最低版本、WebDAV 續傳方式、額外 lftp 設定；每項可覆寫或沿用 設定 → 網路 的全域預設）。密碼與 token 存登入鑰匙圈；未加密連線顯示警告 |
 | 網路傳輸 | 與裝置相同走工作佇列（衝突、續傳、同步、書籤）。續傳：WebDAV 下載 Range、上傳需伺服器支援部分寫入（自動探測）；FTP／SFTP `get -c`／`put -c`；WebDAV／pCloud 下載超過 8 MB 一律分區塊寫入（單一連線也是，斷線只損失手上那一塊、區塊就地重試；pCloud 下載連結失效時自動換新）、大於 32 MB 的檔案以上傳工作階段分段上傳，中斷後從伺服器已收到的位置接著傳（重開 app 也可以）。同來源移動／複製：WebDAV MOVE／COPY、pCloud 伺服器端、FTP／SFTP 只能改名（複製經 Mac 中繼） |
@@ -95,7 +96,7 @@ Sources/SFMCore/              L1：零 UI 相依，可 swift test
   Network/                    網路來源：NetworkAccount（帳號＋ConnectionOptions）、帳號庫 accounts.json、CredentialStore（鑰匙圈）、
                               NetworkSourceFactory（協定 → 實作的唯一對應）、WebDAV/（移植自 nas_webdav）、
                               Lftp/（FTP／FTPS／SFTP，lftp 子行程）、PCloud/（REST、帳號密碼登入、選用 OAuth2 loopback）
-  Sources/                    FileSource 抽象（含續傳介面 ResumableTransfer）+ Mac／Android／iPhone／MTP 實作；
+  Sources/                    FileSource 抽象（含續傳介面 ResumableTransfer、時間位移包裝 TimeShiftedSource）+ Mac／Android／iPhone／MTP 實作；
                               MacLocations（Mac 位置捷徑：雲端硬碟、磁碟）
   MTP/                        MTPSession（每台裝置一條序列佇列）、MTPDeviceManager（偵測／開啟／釋放）
   Queue/                      工作佇列：TransferJob（模型與 FSM）、TransferPlanner（建立節點，資料夾執行到才展開）、TransferRate（速率／剩餘時間）、TransferDispatcher／ExecutorLanes（主／子執行器分派）、SyncPlanner（同步比對）、
@@ -107,6 +108,7 @@ Sources/SFMCore/              L1：零 UI 相依，可 swift test
 Sources/SmartphoneFileManager/ L4：SwiftUI app
   App/AppModel                協調者：來源解析、剪貼簿、加入工作佇列、拖放、開啟
   App/QuitGuard               傳輸中結束 app 前的詢問（主視窗關閉前攔下、⌘Q）
+  Browser/TimeOffsetSheet     來源的時間位移設定（含預覽）
   Queue/                      TasksPanel（底部工作面板）、ConflictSheet（衝突對話框）
   Browser/                    BrowserModel（窗格狀態，左右共用）、BrowserPaneView、對話框
   Main/                       MainWindowView、DeviceToolsPopover（工具列 Android／iPhone 工具彈出視窗）、SyncPopover（同步視窗）

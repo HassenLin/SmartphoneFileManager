@@ -501,6 +501,25 @@ struct TransferQueueTests {
         #expect(otherStore.files["/b/x.txt"] == Data("x".utf8) && otherStore.files["/b/z.txt"] == Data("z".utf8))
     }
 
+    /// 條件式規則套用到全部：每個檔案各自判斷（大小相同略過、不同覆寫），只問一次
+    @Test func conflictRuleAppliesPerFile() async throws {
+        let (android, androidStore) = makeDevice(.android("A"))
+        androidStore.files["/a/z.txt"] = Data("z".utf8)
+        let (other, otherStore) = makeDevice(.android("B"))
+        otherStore.files["/b/x.txt"] = Data("y".utf8)     // 與來源同大小
+        otherStore.files["/b/z.txt"] = Data("old".utf8)   // 大小不同
+        let queue = makeQueue([android, other])
+        let id = queue.enqueue(.copy, items: try await items(android, ["/a/x.txt", "/a/z.txt"]),
+                               from: android.id, to: other.id, directory: "/b")
+        try await wait { !queue.conflicts.isEmpty }
+        queue.answer(queue.conflicts[0].id, action: .overwriteIfDifferentSize, applyToAll: true)
+        let job = try await finished(queue, id)
+        #expect(job.state == .completed && job.conflictPolicy == .overwriteIfDifferentSize)
+        #expect(otherStore.files["/b/x.txt"] == Data("y".utf8))
+        #expect(otherStore.files["/b/z.txt"] == Data("z".utf8))
+        #expect(job.allNodes.first { $0.name == "x.txt" }?.state == .skipped)
+    }
+
     // MARK: 暫停／繼續／停止
 
     @Test func pausePersistsAcrossRelaunchAndResumes() async throws {
@@ -719,5 +738,51 @@ struct TransferRetryTests {
         #expect(TransferRetry.volumeMissing("/Volumes/sfm-no-such-disk-\(UUID().uuidString)/a.zip"))
         #expect(!TransferRetry.volumeMissing("/Users/someone/a.zip"))
         #expect(!TransferRetry.volumeMissing("/Volumes"))
+    }
+}
+
+@Suite("ConflictAction")
+struct ConflictActionTests {
+    let now = Date()
+    func stat(_ size: Int64, _ age: TimeInterval?) -> FileStat {
+        FileStat(size: size, modified: age.map { now.addingTimeInterval(-$0) }, isDirectory: false)
+    }
+
+    @Test func plainActions() {
+        #expect(ConflictAction.resume.resolve(source: stat(10, 0), target: stat(5, 0), canResume: true) == .resume)
+        // 套用到全部的「續傳」遇到不能續傳的檔案改為覆寫
+        #expect(ConflictAction.resume.resolve(source: stat(10, 0), target: stat(5, 0), canResume: false) == .overwrite)
+        #expect(ConflictAction.rename.resolve(source: stat(1, 0), target: stat(1, 0), canResume: false) == .rename)
+    }
+
+    @Test func skipIfSameSize() {
+        let rule = ConflictAction.overwriteIfDifferentSize
+        #expect(rule.resolve(source: stat(10, 0), target: stat(10, 100), canResume: false) == .skip)
+        #expect(rule.resolve(source: stat(10, 100), target: stat(9, 0), canResume: true) == .overwrite)
+    }
+
+    @Test func skipIfNotNewer() {
+        let rule = ConflictAction.overwriteIfNewer
+        #expect(rule.resolve(source: stat(10, 0), target: stat(10, 60), canResume: false) == .overwrite)
+        #expect(rule.resolve(source: stat(10, 60), target: stat(99, 0), canResume: false) == .skip)
+        // 2 秒內視為同時（FAT 時間精度）；日期不明無法確定較新 → 略過
+        #expect(rule.resolve(source: stat(10, 0), target: stat(10, 1.5), canResume: false) == .skip)
+        #expect(rule.resolve(source: stat(10, nil), target: stat(10, 60), canResume: false) == .skip)
+    }
+
+    @Test func skipSameSizeResumeSmaller() {
+        let rule = ConflictAction.resumeIfSmaller
+        #expect(rule.resolve(source: stat(10, 0), target: stat(10, 0), canResume: true) == .skip)
+        #expect(rule.resolve(source: stat(10, 0), target: stat(4, 0), canResume: true) == .resume)
+        // 不能續傳或目的較大：覆寫
+        #expect(rule.resolve(source: stat(10, 0), target: stat(4, 0), canResume: false) == .overwrite)
+        #expect(rule.resolve(source: stat(10, 0), target: stat(12, 0), canResume: true) == .overwrite)
+    }
+
+    @Test func skipIfSameSizeAndNotNewer() {
+        let rule = ConflictAction.overwriteIfDifferentSizeOrNewer
+        #expect(rule.resolve(source: stat(10, 60), target: stat(10, 0), canResume: false) == .skip)
+        #expect(rule.resolve(source: stat(10, 0), target: stat(10, 60), canResume: false) == .overwrite)
+        #expect(rule.resolve(source: stat(11, 60), target: stat(10, 0), canResume: false) == .overwrite)
     }
 }

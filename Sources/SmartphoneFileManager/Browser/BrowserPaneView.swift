@@ -114,6 +114,14 @@ struct BrowserPaneView: View {
             }
             Button("Network Accounts…") { openAccounts(nil) }
             Divider()
+            // Mac 本機的時間由系統提供，不需位移
+            if let id = model.sourceID, id != .mac {
+                let offset = app.timeOffset(for: id)
+                Button(offset == 0 ? String(localized: "Time Offset…")
+                                   : String(localized: "Time Offset (\(TimeOffsetSheet.format(offset)))…")) {
+                    app.sheet = .timeOffset(side)
+                }
+            }
             if !app.devices.iphoneToolsInstalled {
                 Button("Set Up iPhone Access…") { app.sheet = .setupGuide(.iphone) }
             }

@@ -105,7 +105,7 @@ final class BrowserModel {
     var capabilities: SourceCapabilities { source?.capabilities ?? SourceCapabilities() }
 
     /// 目前來源若為 Android，回傳其 adb 來源（chmod、安裝 APK、搜尋用）
-    var androidSource: AndroidFileSource? { source as? AndroidFileSource }
+    var androidSource: AndroidFileSource? { source?.unwrapped as? AndroidFileSource }
 
     // MARK: 來源
 
@@ -124,7 +124,8 @@ final class BrowserModel {
     /// 裝置清單變動時由 AppModel 呼叫；可用性改變（拔掉／接上／授權）才重新載入
     func updateResolved(_ resolved: (any FileSource)?) {
         let wasAvailable = source != nil
-        let executableChanged = (source as? AndroidFileSource)?.device != (resolved as? AndroidFileSource)?.device
+        let executableChanged = (source?.unwrapped as? AndroidFileSource)?.device
+            != (resolved?.unwrapped as? AndroidFileSource)?.device
         source = resolved
         if wasAvailable != (resolved != nil) || executableChanged {
             if resolved != nil, path == "/", sourceID != .mac, !isRestoredPath { path = resolved!.homePath }
@@ -277,14 +278,14 @@ final class BrowserModel {
     /// 刪除（Mac 為移到垃圾桶）。逐項執行，失敗的項目彙整後一次回報。
     func changeMode(_ item: FileItem, mode: String) {
         perform(success: String(localized: "Permissions changed"), highlight: item.path) { source in
-            guard let android = source as? AndroidFileSource else { return }
+            guard let android = source.unwrapped as? AndroidFileSource else { return }
             try await android.changeMode(item.path, mode: mode)
         }
     }
 
     func installApk(_ item: FileItem) {
         perform(success: String(localized: "APK installed")) { source in
-            guard let android = source as? AndroidFileSource else { return }
+            guard let android = source.unwrapped as? AndroidFileSource else { return }
             _ = try await android.installApk(item.path)
         }
     }
