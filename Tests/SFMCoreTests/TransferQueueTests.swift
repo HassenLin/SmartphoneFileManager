@@ -549,6 +549,23 @@ struct TransferQueueTests {
         #expect(queue.job(id) == nil)
     }
 
+    /// 停止後 app 依「工作結束」通知重新載入窗格：通知時半成品必須已清掉，否則窗格還列著它，使用者再刪就會失敗
+    @Test func stopNotifiesAfterPartialsAreDiscarded() async throws {
+        let (android, androidStore) = makeDevice(.android("A"))
+        androidStore.files["/a/p.bin"] = Data("p".utf8)
+        let (slow, slowStore) = makeDevice(.android("B"), delay: .milliseconds(300))
+        let queue = makeQueue([android, slow])
+        nonisolated(unsafe) var leftover: [String]?
+        queue.onJobFinished = { _ in leftover = slowStore.with { Array($0.files.keys) } }
+        let id = try #require(queue.enqueue(.copy, items: try await items(android, ["/a/p.bin"]),
+                                            from: android.id, to: slow.id, directory: "/b"))
+        try await wait { queue.job(id)?.allNodes.contains { $0.state == .running && !$0.isDirectory } == true }
+        slowStore.with { $0.files["/b/p.bin"] = Data("half".utf8) }   // 傳到一半留在目的端的內容
+        queue.stop(id)
+        try await wait { leftover != nil }
+        #expect(leftover?.contains("/b/p.bin") == false)
+    }
+
     @Test func oneJobPerDeviceAtATime() async throws {
         let (android, androidStore) = makeDevice(.android("A"))
         androidStore.files["/a/z.txt"] = Data("z".utf8)
@@ -670,6 +687,25 @@ struct TransferRetryTests {
         #expect(node.state == .skipped)
         #expect(node.message?.isEmpty == false)
         #expect(store.with { $0.attempts["/a/gone.bin"] } == 1)
+    }
+
+    /// 刪除排隊期間項目已被移走（窗格清單過時）：目的已達成，略過並註明，工作不算失敗
+    @Test func deletingVanishedItemIsSkipped() async throws {
+        let store = FakeStore()
+        store.directories.insert("/a")
+        store.files["/a/keep.bin"] = Data([1])
+        let cloud = FakeSource(id: .network(UUID()), store: store, nativeCopy: false)
+        let queue = TransferQueue(store: QueueStore(directory: storeDirectory))
+        queue.resolver = { [cloud] id in id == cloud.id ? cloud : nil }
+        let id = try #require(queue.enqueue(.delete, items: [FileItem(path: "/a/gone.bin", isDirectory: false, size: 1),
+                                                             FileItem(path: "/a/keep.bin", isDirectory: false, size: 1)],
+                                            from: cloud.id))
+        for _ in 0..<300 where queue.job(id)?.state.isFinished != true { try await Task.sleep(for: .milliseconds(10)) }
+        let job = try #require(queue.job(id))
+        #expect(job.state == .completed)
+        #expect(job.allNodes.first { $0.name == "gone.bin" }?.state == .skipped)
+        #expect(job.allNodes.first { $0.name == "keep.bin" }?.state == .done)
+        #expect(store.files["/a/keep.bin"] == nil)
     }
 
     @Test func classifiesErrors() {

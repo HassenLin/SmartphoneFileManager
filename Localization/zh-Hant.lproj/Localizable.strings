@@ -49,6 +49,7 @@
 "Additional rsync arguments" = "額外的 rsync 參數";
 "Advanced" = "進階";
 "Already exists: %@" = "已存在：%@";
+"Already gone (moved or deleted)" = "已不存在（已被移動或刪除），略過";
 "Already in this folder" = "已在此資料夾";
 "Always re-upload whole file" = "一律整份重新上傳";
 "Always runs rsync -a (keeps times, permissions and links)." = "一律以 rsync -a 執行（保留時間、權限與連結）。";
@@ -453,6 +454,7 @@
 "Project name" = "專案名稱";
 "Protocol" = "協定";
 "Queued" = "排隊中";
+"Quit" = "結束";
 "Read" = "讀取";
 "Read-only" = "唯讀";
 "Reboot" = "重新開機";
@@ -490,6 +492,7 @@
 "Root" = "Root";
 "Run in Terminal" = "在終端機執行";
 "Running" = "進行中";
+"Running tasks are paused and can be resumed the next time you open the app." = "進行中的工作會暫停，下次開啟 app 時可以繼續。";
 "Runs adb tcpip on the selected USB device and fills in its Wi-Fi IP address." = "對選取的 USB 裝置執行 adb tcpip，並自動填入其 Wi-Fi IP 位址。";
 "SHA-256: %@" = "SHA-256：%@";
 "Save" = "儲存";
@@ -606,6 +609,7 @@
 "Timeout (seconds)" = "逾時（秒）";
 "Transfer" = "傳輸";
 "Transfer cancelled" = "已取消傳輸";
+"Transfers are in progress. Quit anyway?" = "還有傳輸在進行，確定要結束嗎？";
 "Trust This Certificate" = "信任此憑證";
 "Trusted identity" = "已信任的身分";
 "Turn device screen off while mirroring" = "鏡像時關閉裝置螢幕";

@@ -14,9 +14,16 @@ struct SmartphoneFileManagerApp: App {
     var body: some Scene {
         Window("Smartphone File Manager", id: "main") {
             MainWindowView(app: app)
+                .background(MainWindowCloseGuard(
+                    needsConfirmation: { [app] in app.queue.jobs.contains { $0.state.isActive } },
+                    onConfirmQuit: { [appDelegate] in
+                        appDelegate.quitConfirmed = true
+                        NSApp.terminate(nil)
+                    }))
                 .onAppear {
                     app.start()
                     AppearanceMode(rawValue: UserDefaults.standard.string(forKey: SettingsKey.appearance) ?? "")?.apply()
+                    appDelegate.hasActiveTransfers = { [app] in app.queue.jobs.contains { $0.state.isActive } }
                     appDelegate.onTerminate = { [app] in
                         app.terminals.closeAll()
                         // adb 伺服器是 app 啟動的才關閉；Android Studio 等其他工具啟動的不動
@@ -69,10 +76,21 @@ struct SmartphoneFileManagerApp: App {
 }
 
 /// 關掉主視窗即結束 app；結束前關閉終端機的 adb 子行程與 app 自己啟動的 adb 伺服器，不留常駐行程。
+/// 還有傳輸在進行時先詢問（見 `QuitConfirmation`）。
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var onTerminate: (@MainActor () -> Void)?
+    var hasActiveTransfers: (@MainActor () -> Bool)?
+    /// 關閉主視窗時已在視窗上問過並按了「結束」：不再問第二次
+    var quitConfirmed = false
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        MainActor.assumeIsolated {
+            guard !quitConfirmed, hasActiveTransfers?() == true else { return .terminateNow }
+            return QuitConfirmation.makeAlert().runModal() == .alertFirstButtonReturn ? .terminateNow : .terminateCancel
+        }
+    }
 
     func applicationWillTerminate(_ notification: Notification) {
         MainActor.assumeIsolated { onTerminate?() }

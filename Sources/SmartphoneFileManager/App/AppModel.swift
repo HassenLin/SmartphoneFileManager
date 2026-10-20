@@ -438,6 +438,15 @@ final class AppModel {
             : String(localized: "Copied \(items.count) item(s) — paste to copy"))
     }
 
+    /// Mac 檔案給 Finder／其他 app 的表示法：只放檔案 URL（public.file-url），由接收端自己讀檔。
+    ///
+    /// 不可用 `NSItemProvider(contentsOf:)`：它同時登記「整份檔案內容」的資料表示法。app 結束時系統會在主執行緒
+    /// 兌現剪貼簿／拖曳板上所有承諾過的資料（`CFPasteboardResolveAllPromisedData`）——等於把整個檔案讀進記憶體，
+    /// 拖過或拷貝過數十 GB 的檔案時，結束 app 會卡住數分鐘（實際取樣確認）。
+    static func macFileProvider(_ path: String) -> NSItemProvider {
+        NSItemProvider(object: URL(fileURLWithPath: path) as NSURL)
+    }
+
     /// ⌘C／⌘X（表格焦點）：交給 SwiftUI 寫入系統剪貼簿的 item provider
     func pasteboardProviders(_ items: [FileItem], from side: PaneSide, move: Bool) -> [NSItemProvider] {
         guard !items.isEmpty, let sourceID = pane(side).sourceID,
@@ -449,7 +458,7 @@ final class AppModel {
         }
         var providers = [provider]
         if sourceID == .mac && !move {
-            providers += items.compactMap { NSItemProvider(contentsOf: URL(fileURLWithPath: $0.path)) }
+            providers += items.map { Self.macFileProvider($0.path) }
         }
         clipboard = FilePayload(source: sourceID, items: items, move: move)
         toasts.success(move
@@ -639,9 +648,7 @@ final class AppModel {
         let browser = pane(side)
         if let sourceID = browser.sourceID { recordDrag(item, from: sourceID) }
         PaneDropDelegate.log.notice("dragProvider \(side.rawValue, privacy: .public) items=\(self.activeDrag?.items.count ?? -1)")
-        let provider = browser.sourceID == .mac
-            ? (NSItemProvider(contentsOf: URL(fileURLWithPath: item.path)) ?? NSItemProvider())
-            : NSItemProvider()
+        let provider = browser.sourceID == .mac ? Self.macFileProvider(item.path) : NSItemProvider()
         if let sourceID = browser.sourceID,
            let data = try? JSONEncoder().encode(FilePayload(source: sourceID, items: [item], move: false)) {
             provider.registerDataRepresentation(forTypeIdentifier: UTType.afmItems.identifier, visibility: .ownProcess) { completion in

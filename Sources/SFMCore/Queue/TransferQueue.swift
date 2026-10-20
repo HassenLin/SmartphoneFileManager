@@ -144,7 +144,7 @@ public final class TransferQueue {
     public func remove(_ id: UUID) {
         guard let index = index(id), tasks[id] == nil else { return }
         let job = jobs[index]
-        if !job.state.isFinished { discardPartials(job) }
+        if !job.state.isFinished { Task { await discardPartials(job) } }
         store.removeStaging(id)
         jobs.remove(at: index)
         save()
@@ -269,20 +269,24 @@ public final class TransferQueue {
     private func finishStop(_ id: UUID) {
         stopRequested.remove(id)
         guard let index = index(id) else { return }
-        discardPartials(jobs[index])
+        let job = jobs[index]
         store.removeStaging(id)
         jobs[index].state = .stopped
         save()
-        onJobFinished?(jobs[index])
+        // 先清完目的端的不完整檔案才通知：app 據此重新載入窗格，太早載入會還列出剛被清掉的檔案，
+        // 使用者接著對它操作（例如刪除）就會失敗
+        Task {
+            await discardPartials(job)
+            if let finished = self.job(id) { onJobFinished?(finished) }
+        }
     }
 
     /// 停止／移除時清除未完成檔案節點留在目的的不完整內容
-    private func discardPartials(_ job: TransferJob) {
+    private func discardPartials(_ job: TransferJob) async {
         guard let destinationID = job.destination, let destination = resolver?(destinationID) else { return }
         let targets = job.allNodes.filter { $0.operation == .transferFile && ($0.state == .partial || $0.state == .running) }
             .map(\.targetPath)
-        guard !targets.isEmpty else { return }
-        Task { for target in targets { try? await destination.discard(target) } }
+        for target in targets { try? await destination.discard(target) }
     }
 
     private func cancelRunning(_ id: UUID) {

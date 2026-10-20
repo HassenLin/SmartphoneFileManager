@@ -49,6 +49,7 @@
 "Additional rsync arguments" = "额外的 rsync 参数";
 "Advanced" = "进阶";
 "Already exists: %@" = "已存在：%@";
+"Already gone (moved or deleted)" = "已不存在（已被移动或删除），略过";
 "Already in this folder" = "已在此文件夹";
 "Always re-upload whole file" = "一律整份重新上传";
 "Always runs rsync -a (keeps times, permissions and links)." = "一律以 rsync -a 运行（保留时间、权限与连结）。";
@@ -453,6 +454,7 @@
 "Project name" = "项目名称";
 "Protocol" = "协定";
 "Queued" = "排队中";
+"Quit" = "结束";
 "Read" = "读取";
 "Read-only" = "只读";
 "Reboot" = "重启";
@@ -490,6 +492,7 @@
 "Root" = "Root";
 "Run in Terminal" = "在终端运行";
 "Running" = "进行中";
+"Running tasks are paused and can be resumed the next time you open the app." = "进行中的工作会暂停，下次开启 app 时可以继续。";
 "Runs adb tcpip on the selected USB device and fills in its Wi-Fi IP address." = "对选取的 USB 设备运行 adb tcpip，并自动填入其 Wi-Fi IP 位址。";
 "SHA-256: %@" = "SHA-256：%@";
 "Save" = "保存";
@@ -606,6 +609,7 @@
 "Timeout (seconds)" = "超时（秒）";
 "Transfer" = "传输";
 "Transfer cancelled" = "已取消传输";
+"Transfers are in progress. Quit anyway?" = "还有传输在进行，确定要结束吗？";
 "Trust This Certificate" = "信任此凭证";
 "Trusted identity" = "已信任的身分";
 "Turn device screen off while mirroring" = "投屏时关闭设备屏幕";

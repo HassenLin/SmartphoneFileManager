@@ -206,8 +206,25 @@ struct TransferExecutor: Sendable {
 
     private func delete(_ node: TransferNode) async throws -> NodeState {
         await report(.state(node.id, .running))
-        try await source.delete(node.sourcePath)
-        return .done
+        return try await deleteIfPresent(node.sourcePath, in: source, node: node)
+    }
+
+    /// 刪除的目的是「那裡不再有它」：刪除失敗但項目其實已不存在（排隊期間被移走、窗格清單過時）時不算失敗，
+    /// 略過並註明。只在失敗後才查，正常刪除不多一次往返
+    private func deleteIfPresent(_ path: String, in store: any FileSource, node: TransferNode) async throws -> NodeState {
+        do {
+            try await store.delete(path)
+            return .done
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            // stat 本身失敗（連不上等）時無法確定，照原錯誤回報；`try?` 會把「失敗」與「不存在」都壓成 nil，不能用
+            let gone: Bool
+            do { gone = try await store.stat(path) == nil } catch { gone = false }
+            guard gone else { throw error }
+            await report(.state(node.id, .skipped, message: String(localized: "Already gone (moved or deleted)")))
+            return .skipped
+        }
     }
 
     /// rsync 自己比對與傳輸；完成時把摘要寫進節點訊息（完成提示用）
@@ -222,8 +239,7 @@ struct TransferExecutor: Sendable {
     private func deleteTarget(_ node: TransferNode) async throws -> NodeState {
         guard let destination else { return .failed }
         await report(.state(node.id, .running))
-        try await destination.delete(node.targetPath)
-        return .done
+        return try await deleteIfPresent(node.targetPath, in: destination, node: node)
     }
 
     private func nativeMove(_ node: TransferNode) async throws -> NodeState {

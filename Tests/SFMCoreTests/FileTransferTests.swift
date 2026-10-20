@@ -88,6 +88,9 @@ struct FakeSource: FileSource {
         }
     }
     func delete(_ path: String) async throws {
+        // 與真實來源相同：不存在的項目刪除失敗
+        let exists = store.with { s in s.files[path] != nil || s.directories.contains(path) }
+        guard exists else { throw NetworkError.notFound(path) }
         store.with { s in
             s.log.append("rm \(path)")
             s.files = s.files.filter { $0.key != path && !$0.key.hasPrefix(path + "/") }
