@@ -203,3 +203,27 @@ struct FileTransferTests {
         #expect(items[1].name == "h 2.txt" && items[1].size == 6 && items[1].modified != nil)
     }
 }
+
+@Suite("LocalResumableCopy")
+struct LocalResumableCopyTests {
+    /// 複製在 detached task 裡跑：呼叫端被取消（佇列暫停／停止）時必須跟著停，不能跑完整個檔案
+    @Test func stopsWhenCallerIsCancelled() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let source = dir.appendingPathComponent("big.bin")
+        let target = dir.appendingPathComponent("copy.bin")
+        let size = LocalResumableCopy.chunkSize * 20
+        try Data(count: size).write(to: source)
+
+        let copy = Task {
+            // 每塊放慢，讓取消一定發生在複製途中
+            try await LocalResumableCopy.copy(from: source, to: target) { _ in usleep(30_000) }
+        }
+        try await Task.sleep(for: .milliseconds(100))
+        copy.cancel()
+        await #expect(throws: CancellationError.self) { try await copy.value }
+        let written = (try FileManager.default.attributesOfItem(atPath: target.path)[.size] as? Int) ?? 0
+        #expect(written < size)
+    }
+}

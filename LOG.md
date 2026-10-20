@@ -1,5 +1,10 @@
 # LOG
 
+- 2026-10-20｜**修正：Mac → Mac 的工作無法暫停／停止**：Mac 本機的分塊續傳複製（`LocalResumableCopy`）在 `Task.detached` 裡跑，
+  detached task 不繼承呼叫端的取消，每塊之間的 `checkCancellation()` 永遠收不到——佇列按暫停／停止後仍把整個檔案（數十 GB）複製完。
+  改以 `withTaskCancellationHandler` 把取消轉給它。新增測試（取消後須拋出 CancellationError、目的檔未寫完），改回舊寫法時確實失敗。
+  測試 124 項通過。
+
 - 2026-10-19｜**adb 只在需要時啟動、結束時只關自己啟動的伺服器；pCloud 登入狀態實際驗證**
   - adb：窗格選了 Android（或有涉及 Android 的待執行工作）才輪詢；來源選單在未啟用時有「Android」項目。
     `AdbServer` 在每個 adb 指令前探測伺服器埠，app 啟動的才在結束時 `kill-server`。以記錄呼叫的 adb 包裝程式實測：

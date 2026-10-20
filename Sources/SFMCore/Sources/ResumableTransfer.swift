@@ -49,8 +49,11 @@ enum LocalResumableCopy {
     static let chunkSize = 8 << 20
 
     /// `target` 已存在時從其大小接著寫；比來源大則視為無效、從頭來過。每塊之間檢查取消。
+    ///
+    /// 阻塞式讀寫放在 detached task（不佔用協作執行緒池）；但 detached task **不繼承呼叫端的取消**，
+    /// 所以以 `withTaskCancellationHandler` 把取消轉過去，否則佇列的暫停／停止對 Mac→Mac 複製無效。
     static func copy(from source: URL, to target: URL, onProgress: @escaping @Sendable (Double) -> Void) async throws {
-        try await Task.detached(priority: .userInitiated) {
+        let work = Task.detached(priority: .userInitiated) {
             let fm = FileManager.default
             let total = (try fm.attributesOfItem(atPath: source.path)[.size] as? Int64) ?? 0
             var done = (try? fm.attributesOfItem(atPath: target.path)[.size] as? Int64) ?? 0
@@ -71,6 +74,7 @@ enum LocalResumableCopy {
                 onProgress(total > 0 ? Double(done) / Double(total) : 1)
             }
             onProgress(1)
-        }.value
+        }
+        try await withTaskCancellationHandler { try await work.value } onCancel: { work.cancel() }
     }
 }
