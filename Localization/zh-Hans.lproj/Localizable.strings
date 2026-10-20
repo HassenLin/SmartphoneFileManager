@@ -48,6 +48,7 @@
 "Add a WebDAV, FTP, SFTP or pCloud account with the + button." = "按 + 新增 WebDAV、FTP、SFTP 或 pCloud 帐号。";
 "Additional rsync arguments" = "额外的 rsync 参数";
 "Advanced" = "进阶";
+"All remaining conflicts, by rule" = "其余所有冲突，依条件";
 "Already exists: %@" = "已存在：%@";
 "Already gone (moved or deleted)" = "已不存在（已被移动或删除），略过";
 "Already in this folder" = "已在此文件夹";
@@ -65,7 +66,6 @@
 "Any (e.g. 40000-40100)" = "任意（例如 40000-40100）";
 "Appearance" = "外观";
 "Apply" = "套用";
-"Apply to all remaining conflicts in this task" = "套用到此工作的其余冲突";
 "Apps" = "应用";
 "Apps…" = "应用管理…";
 "At least %@ left (still scanning)" = "至少剩 %@（仍在扫描）";
@@ -84,7 +84,6 @@
 "Browse…" = "浏览…";
 "Bundle ID" = "Bundle ID";
 "Bundled (recommended)" = "内附（建议）";
-"By rule:" = "依条件：";
 "CPU" = "CPU";
 "Cancel" = "取消";
 "Cancel running adb commands (⌘.)" = "取消运行中的 adb 命令（⌘.）";
@@ -136,6 +135,7 @@
 "Connected — %lld items in %@" = "已连接 — %2$@ 内有 %1$lld 个项目";
 "Connection" = "连接";
 "Connections per large file" = "大档同时连接数";
+"Continue from the size of the destination file" = "从目的档当前的大小接着传";
 "Copied %lld item(s)" = "已复制 %lld 个项目";
 "Copied %lld item(s) to %@" = "已复制 %lld 个项目到“%@”";
 "Copied %lld item(s) to device" = "已复制 %lld 个项目到设备";
@@ -207,6 +207,7 @@
 "Discard unsaved changes?" = "要放弃未保存的修改吗？";
 "Discharging" = "放电中";
 "Disconnect when idle (seconds)" = "闲置多久后断线（秒）";
+"Do the same for all remaining conflicts in this task" = "其余冲突也这样处理";
 "Documents" = "文件";
 "Done" = "完成";
 "Don’t Verify the Certificate for This Account" = "此帐号不验证凭证";
@@ -607,6 +608,7 @@
 "The MTP device was disconnected" = "MTP 设备已中断连接";
 "The SFTP server's host key has changed. Reset it in the account options if this is expected." = "SFTP 伺服器的主机金钥已改变。若是预期中的变更（例如伺服器重灌），请在帐号选项中重设。";
 "The bundled adb is missing from this build. Rebuild with tools/make-app.sh, or use option 2 or 3." = "此版本缺少内附的 adb。请以 tools/make-app.sh 重新构建，或改用方式二、三。";
+"The destination file is not smaller than the source, so there is nothing to continue." = "目的档没有比来源小，没有可接着传的部分。";
 "The destination is not available" = "目标位置无法使用";
 "The file cannot be decoded as %@." = "此文件无法以 %@ 解码。";
 "The main executor always downloads over several connections. With 2 or more simultaneous transfers, it takes the large files and the other slots move small files one connection each. With 1, it is the only executor, so every download uses several connections. Uploads always use one connection per file. With a phone on the other side, transfers stay one at a time. FTP servers often limit connections per IP." = "主运行器一律以多条连接下载。同时传输数 ≥ 2 时，主运行器负责大档，其余名额（子运行器）传小档，各一条连接；设为 1 时主运行器是唯一的运行器，每个下载都用多条连接。上传每个文件一律一条连接。另一端是手机时仍逐档。FTP 伺服器常限制每个 IP 的连接数。";
@@ -620,6 +622,7 @@
 "This Mac" = "这台 Mac";
 "This app ships with Google's adb. Switch back to it if Settings points somewhere else." = "本 App 内附 Google 的 adb；若设置指向其他位置，可切回内附版本。";
 "This cannot be undone." = "此动作无法复原。";
+"This file" = "这个文件";
 "This is a virtual folder and cannot be changed" = "这是虚拟文件夹，无法变更";
 "This is a virtual folder. Open Media or an app folder first." = "这是虚拟文件夹，请先开启 Media 或某个 App 的文件夹。";
 "Time Offset (%@)…" = "时间位移（%@）…";
