@@ -303,7 +303,15 @@ struct TransferExecutor: Sendable {
             } catch is CancellationError {
                 await report(.state(node.id, .partial))
                 throw CancellationError()
-            } catch where attempt < retry.delays.count && isRetryable(error, node: node, target: target) {
+            } catch {
+                // 排隊／暫停期間來源被移走或刪除（例如另一個移動工作）：沒有東西可傳，略過並清掉目的端的不完整內容。
+                // 必須在判斷重試之前檢查——來源不見時目的端可能只報出「逾時」等看似暫時性的錯誤，會一直白白重試
+                if await sourceVanished(node) {
+                    try? await destination.discard(target)
+                    await report(.state(node.id, .skipped, message: String(localized: "Source file no longer exists (moved or deleted)")))
+                    return .skipped
+                }
+                guard attempt < retry.delays.count, isRetryable(error, node: node, target: target) else { throw error }
                 // 暫時性錯誤：等一下再呼叫一次，各來源的續傳從已傳的部分接著做（見 TransferRetry）
                 let delay = retry.delays[attempt]
                 attempt += 1
@@ -316,12 +324,6 @@ struct TransferExecutor: Sendable {
                     await report(.state(node.id, .partial))
                     throw CancellationError()
                 }
-            } catch {
-                // 排隊／暫停期間來源被移走或刪除（例如另一個移動工作）：沒有東西可傳，略過並清掉目的端的不完整內容
-                guard await sourceVanished(node) else { throw error }
-                try? await destination.discard(target)
-                await report(.state(node.id, .skipped, message: String(localized: "Source file no longer exists (moved or deleted)")))
-                return .skipped
             }
         }
         self.progress(node.id, size)

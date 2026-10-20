@@ -88,7 +88,12 @@ public struct PCloudFileSource: FileSource {
     }
 
     /// 單檔上傳：一段就裝得下的小檔用 `uploadfile` 一次送完；較大的走可續傳的上傳工作階段
+    /// 本機檔不存在時立即丟出「找不到檔案」：`localSize` 對不存在的檔案回傳 0，會被當成小檔走 `uploadfile`，
+    /// URLSession 送出標頭後讀不到內容，伺服器一直等到逾時——看起來像暫時性的網路錯誤而被不斷重試
     private func uploadFile(_ localURL: URL, to path: String, onProgress: @escaping @Sendable (Double) -> Void) async throws {
+        guard FileManager.default.fileExists(atPath: localURL.path) else {
+            throw CocoaError(.fileReadNoSuchFile, userInfo: [NSFilePathErrorKey: localURL.path])
+        }
         if NetworkTransfer.localSize(localURL) <= Int64(PCloudUpload.chunkSize) {
             return try await client.upload(localURL, to: path, onProgress: onProgress)
         }

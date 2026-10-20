@@ -653,6 +653,8 @@ struct TransferRetryTests {
     @Test func vanishedSourceIsSkipped() async throws {
         let store = FakeStore()
         store.directories.insert("/a")
+        // 來源不見時傳輸常報出看似暫時性的錯誤（pCloud：送不出內容 → 逾時），不可因此一直重試
+        store.failures["/a/gone.bin"] = Array(repeating: URLError(.timedOut), count: 5)
         let cloud = FakeSource(id: .network(UUID()), store: store, nativeCopy: false)
         let other = FakeSource(id: .network(UUID()), store: FakeStore(), nativeCopy: false)
         other.store.directories.insert("/b")
@@ -667,6 +669,7 @@ struct TransferRetryTests {
         let node = try #require(job.allNodes.first { $0.name == "gone.bin" })
         #expect(node.state == .skipped)
         #expect(node.message?.isEmpty == false)
+        #expect(store.with { $0.attempts["/a/gone.bin"] } == 1)
     }
 
     @Test func classifiesErrors() {
