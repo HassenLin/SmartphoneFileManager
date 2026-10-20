@@ -556,6 +556,7 @@
   "Sort" : "排序",
   "Sort By" : "排序方式",
   "Source" : "来源",
+  "Source file no longer exists (moved or deleted)" : "来源文件已不存在（已被移动或删除），略过",
   "Start folder" : "起始文件夹",
   "Status" : "状态",
   "Still used by: %@. Those bookmarks and sync projects will no longer open." : "仍被使用：%@。这些书签与同步项目将无法再开启。",

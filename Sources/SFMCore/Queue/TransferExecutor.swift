@@ -316,11 +316,27 @@ struct TransferExecutor: Sendable {
                     await report(.state(node.id, .partial))
                     throw CancellationError()
                 }
+            } catch {
+                // 排隊／暫停期間來源被移走或刪除（例如另一個移動工作）：沒有東西可傳，略過並清掉目的端的不完整內容
+                guard await sourceVanished(node) else { throw error }
+                try? await destination.discard(target)
+                await report(.state(node.id, .skipped, message: String(localized: "Source file no longer exists (moved or deleted)")))
+                return .skipped
             }
         }
         self.progress(node.id, size)
         if node.deleteSourceAfter { try await source.delete(node.sourcePath) }
         return .done
+    }
+
+    /// 傳輸失敗後確認：來源檔已不存在。Mac 來源所在的磁碟整顆不見時不算（那是磁碟沒接上，見 `isRetryable`）
+    private func sourceVanished(_ node: TransferNode) async -> Bool {
+        if source.id.kind == .mac, TransferRetry.volumeMissing(node.sourcePath) { return false }
+        do {
+            return try await source.stat(node.sourcePath) == nil
+        } catch {
+            return false
+        }
     }
 
     /// 錯誤本身是暫時性的，或 Mac 端（來源或目的）所在的外接磁碟暫時不見了

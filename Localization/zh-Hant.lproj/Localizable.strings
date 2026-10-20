@@ -556,6 +556,7 @@
 "Sort" = "排序";
 "Sort By" = "排序方式";
 "Source" = "來源";
+"Source file no longer exists (moved or deleted)" = "來源檔案已不存在（已被移動或刪除），略過";
 "Start folder" = "起始資料夾";
 "Status" = "狀態";
 "Still used by: %@. Those bookmarks and sync projects will no longer open." = "仍被使用：%@。這些書籤與同步專案將無法再開啟。";

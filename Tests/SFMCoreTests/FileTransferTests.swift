@@ -227,3 +227,30 @@ struct LocalResumableCopyTests {
         #expect(written < size)
     }
 }
+
+@Suite("MacFileSource")
+struct MacFileSourceVolumeTests {
+    /// 拖放預設移動或拷貝依此判斷：同一磁碟區才是瞬間改名，跨磁碟區要整份複製
+    @Test func moveIsInstantOnlyWithinVolume() async throws {
+        let mac = MacFileSource()
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("a.zip").path
+        try Data([1]).write(to: URL(fileURLWithPath: file))
+        #expect(await mac.moveIsInstant(file, to: dir.path + "/b.zip"))
+
+        // 本機若掛著外接磁碟區，跨磁碟區必須判為非瞬間；沒有時略過這段
+        func volumeID(_ path: String) -> NSObject? {
+            (try? URL(fileURLWithPath: path).resourceValues(forKeys: [.volumeIdentifierKey]))?.volumeIdentifier as? NSObject
+        }
+        let here = try #require(volumeID(dir.path))
+        let external = ((try? FileManager.default.contentsOfDirectory(atPath: "/Volumes")) ?? [])
+            .map { "/Volumes/" + $0 }
+            .filter { (try? FileManager.default.destinationOfSymbolicLink(atPath: $0)) == nil }   // 「Macintosh HD」是指向 / 的連結
+            .first { volumeID($0).map { !$0.isEqual(here) } ?? false }
+        if let external {
+            #expect(!(await mac.moveIsInstant(file, to: external + "/a.zip")))
+        }
+    }
+}

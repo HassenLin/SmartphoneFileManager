@@ -511,16 +511,15 @@ struct PaneDropDelegate: DropDelegate {
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
         DropProposal(operation: info.hasItemsConforming(to: [.afmItems])
-                     ? app.dropOperation(on: side, optionHeld: NSEvent.modifierFlags.contains(.option))
+                     ? app.dropOperation(on: side, modifier: .current)
                      : .copy)
     }
 
     func performDrop(info: DropInfo) -> Bool {
         Self.log.notice("performDrop \(side.rawValue, privacy: .public) afm=\(info.hasItemsConforming(to: [.afmItems])) activeDrag=\(app.activeDrag?.items.count ?? -1)")
         highlight.set(false)
-        let optionHeld = NSEvent.modifierFlags.contains(.option)
         if info.hasItemsConforming(to: [.afmItems]),
-           app.handleInternalDrop(on: side, optionHeld: optionHeld) {
+           app.handleInternalDrop(on: side, modifier: .current) {
             return true
         }
         return app.handleDrop(info.itemProviders(for: [.afmItems, .fileURL]), on: side)

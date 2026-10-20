@@ -301,8 +301,10 @@ public final class TransferQueue {
         switch event {
         case let .state(nodeID, state, message):
             jobs[index].updateNode(nodeID) {
+                // 同一狀態再回報一次但沒帶訊息時保留原訊息（runNode 結束時會再回報一次最終狀態，
+                // 不可蓋掉操作自己寫的說明，例如「來源檔案已不存在」）；狀態改變時才清除
+                if message != nil || $0.state != state { $0.message = message }
                 $0.state = state
-                $0.message = message
                 if state == .done, !$0.isDirectory { $0.transferred = $0.size }
             }
             // 每個節點結束都保存，關閉 app 後才知道從哪裡繼續

@@ -649,6 +649,26 @@ struct TransferRetryTests {
         #expect(job.state == .failed)
     }
 
+    /// 排好的檔案在傳之前被移走（例如另一個移動工作搬走了同步來源裡的檔案）：略過並說明原因，工作照常完成
+    @Test func vanishedSourceIsSkipped() async throws {
+        let store = FakeStore()
+        store.directories.insert("/a")
+        let cloud = FakeSource(id: .network(UUID()), store: store, nativeCopy: false)
+        let other = FakeSource(id: .network(UUID()), store: FakeStore(), nativeCopy: false)
+        other.store.directories.insert("/b")
+        let queue = TransferQueue(store: QueueStore(directory: storeDirectory))
+        queue.resolver = { [cloud, other] id in id == cloud.id ? cloud : id == other.id ? other : nil }
+        queue.retry = TransferRetry(delays: [.milliseconds(10)])
+        let id = try #require(queue.enqueue(.copy, items: [FileItem(path: "/a/gone.bin", isDirectory: false, size: 64)],
+                                            from: cloud.id, to: other.id, directory: "/b"))
+        for _ in 0..<300 where queue.job(id)?.state.isFinished != true { try await Task.sleep(for: .milliseconds(10)) }
+        let job = try #require(queue.job(id))
+        #expect(job.state == .completed)
+        let node = try #require(job.allNodes.first { $0.name == "gone.bin" })
+        #expect(node.state == .skipped)
+        #expect(node.message?.isEmpty == false)
+    }
+
     @Test func classifiesErrors() {
         // 外接磁碟暫時讀不到：Foundation 把 POSIX ENXIO（尚未設定裝置）包在 NSUnderlyingError 裡
         let wrapped = NSError(domain: NSCocoaErrorDomain, code: NSFileReadUnknownError,

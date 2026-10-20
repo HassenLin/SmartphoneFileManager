@@ -675,41 +675,93 @@ final class AppModel {
         }
     }
 
-    /// 窗格之間的放下：直接使用拖曳開始時的紀錄，不載入任何拖曳資料。
-    /// 與 Finder 相同：同一來源預設移動（原生 mv），按住 Option 為拷貝；不同來源為拷貝。
-    func handleInternalDrop(on side: PaneSide, directory: String? = nil, optionHeld: Bool) -> Bool {
+    /// 窗格之間的放下：直接使用拖曳開始時的紀錄，不載入任何拖曳資料。移動或拷貝見 `dropIsMove`。
+    func handleInternalDrop(on side: PaneSide, directory: String? = nil, modifier: DropModifier) -> Bool {
         guard let drag = activeDrag, pane(side).source != nil else {
             PaneDropDelegate.log.notice("handleInternalDrop: 無 activeDrag 或來源不可用")
             return false
         }
         PaneDropDelegate.log.notice("handleInternalDrop \(side.rawValue, privacy: .public) items=\(drag.items.count)")
         activeDrag = nil
+        dropHint = nil
         let browser = pane(side)
         let target = directory ?? browser.path
         let items = drag.items.filter {
             !(drag.source == browser.sourceID && RemotePath.parent(of: $0.path) == RemotePath.normalize(target))
         }
-        transfer(items, from: drag.source, to: side, directory: target, move: drag.source == browser.sourceID && !optionHeld)
+        Task {
+            let move = await dropIsMove(items, from: drag.source, to: side, directory: target, modifier: modifier)
+            transfer(items, from: drag.source, to: side, directory: target, move: move)
+        }
         return true
     }
 
-    /// 放下時的游標提示：同來源且未按 Option 為移動，其餘為拷貝
-    func dropOperation(on side: PaneSide, optionHeld: Bool) -> DropOperation {
-        guard let drag = activeDrag else { return .copy }
-        return drag.source == pane(side).sourceID && !optionHeld ? .move : .copy
+    /// 放下時按住的修飾鍵（與 Finder 相同）
+    enum DropModifier {
+        /// 沒按：依「移動是否只是改名」決定
+        case none
+        /// Option：一律拷貝
+        case copy
+        /// ⌘：同來源一律移動（跨磁碟也是，會先複製再刪除來源）
+        case move
+
+        static var current: DropModifier {
+            let flags = NSEvent.modifierFlags
+            return flags.contains(.option) ? .copy : flags.contains(.command) ? .move : .none
+        }
+    }
+
+    /// 拖放是移動還是拷貝（與 Finder 相同）：不同來源一律拷貝；同來源時，
+    /// 移動只是改名（`moveIsInstant`：同一磁碟區／檔案系統／儲存空間）才預設移動，
+    /// 跨磁碟（例如兩顆外接碟之間、手機內部儲存 ↔ SD 卡）預設拷貝，不搬走原檔。
+    func dropIsMove(_ items: [FileItem], from sourceID: SourceID, to side: PaneSide, directory: String,
+                    modifier: DropModifier) async -> Bool {
+        guard sourceID == pane(side).sourceID, modifier != .copy else { return false }
+        if modifier == .move { return true }
+        guard let source = pane(side).source else { return false }
+        for item in items {
+            let target = RemotePath.join(directory, RemotePath.name(of: item.path))
+            if !(await source.moveIsInstant(item.path, to: target)) { return false }
+        }
+        return true
+    }
+
+    /// 拖曳中游標提示的快取：`dropUpdated` 隨滑鼠移動一直呼叫，判斷要查來源（Android 走 adb），每個目標資料夾只查一次
+    private struct DropHint: Equatable {
+        let side: PaneSide
+        let directory: String
+        let startedAt: Date
+    }
+
+    @ObservationIgnored private var dropHint: DropHint?
+    @ObservationIgnored private var dropHintIsMove = false
+
+    /// 放下時的游標提示（規則同 `dropIsMove`）；查詢結果出來前先顯示拷貝
+    func dropOperation(on side: PaneSide, modifier: DropModifier) -> DropOperation {
+        guard let drag = activeDrag, drag.source == pane(side).sourceID, modifier != .copy else { return .copy }
+        if modifier == .move { return .move }
+        let hint = DropHint(side: side, directory: pane(side).path, startedAt: drag.startedAt)
+        if hint != dropHint {
+            dropHint = hint
+            dropHintIsMove = false
+            Task {
+                let move = await dropIsMove(drag.items, from: drag.source, to: side, directory: hint.directory, modifier: .none)
+                if dropHint == hint { dropHintIsMove = move }
+            }
+        }
+        return dropHintIsMove ? .move : .copy
     }
 
     /// 從 Finder／其他 App 放下到窗格（窗格之間的放下見 `handleInternalDrop`）。
     /// 下方仍保留自有型別的處理，作為 `activeDrag` 遺失時的退路。
-    /// 與 Finder 相同：**同一來源**（例如左右都是同一台 iPhone）預設為移動，走原生 mv、
-    /// 不經 Mac 中繼；按住 Option 才是拷貝。不同來源一律拷貝。
+    /// 移動或拷貝的規則同窗格之間的拖放（`dropIsMove`）。
     /// 拖回自己所在的同一資料夾視為不動作，避免誤觸產生副本。
     func handleDrop(_ providers: [NSItemProvider], on side: PaneSide, directory: String? = nil) -> Bool {
         let browser = pane(side)
         guard browser.source != nil else { return false }
         let target = directory ?? browser.path
         // 放下當下的修飾鍵（之後進入 Task 就讀不到了）
-        let optionHeld = NSEvent.modifierFlags.contains(.option)
+        let modifier = DropModifier.current
         Task {
             var payloads: [FilePayload] = []
             var urls: [URL] = []
@@ -728,7 +780,7 @@ final class AppModel {
                 let items = group.flatMap(\.items).filter {
                     !(sourceID == browser.sourceID && RemotePath.parent(of: $0.path) == RemotePath.normalize(target))
                 }
-                let move = sourceID == browser.sourceID && !optionHeld
+                let move = await dropIsMove(items, from: sourceID, to: side, directory: target, modifier: modifier)
                 transfer(items, from: sourceID, to: side, directory: target, move: move)
             }
             // Finder 拖進來的檔案一律拷貝，不搬走使用者在 Finder 的原檔
