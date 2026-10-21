@@ -24,8 +24,10 @@ struct TasksPanel: View {
                         ForEach(app.transfers.jobs) { ActivityRow(job: $0) }
                         ForEach(queue.jobs) { job in
                             DisclosureGroup {
-                                OutlineGroup(job.roots, children: \.children) {
-                                    NodeRow(node: $0, lane: queue.fileLanes[job.id]?[$0.id])
+                                OutlineGroup(job.roots, children: \.children) { node in
+                                    NodeRow(node: node, lane: queue.fileLanes[job.id]?[node.id]) {
+                                        queue.removeNode(node.id, from: job.id)
+                                    }
                                 }
                             } label: {
                                 JobRow(app: app, job: job)
@@ -203,10 +205,15 @@ private struct JobRow: View {
     }
 }
 
-/// 工作樹的一個節點（資料夾或檔案）。傳輸中的檔案以處理它的執行器顏色顯示進度
+/// 工作樹的一個節點（資料夾或檔案）。傳輸中的檔案以處理它的執行器顏色顯示進度。
+/// 滑鼠移到列上時出現「從工作移除」（右鍵選單也有）：不再處理這個項目，傳到一半的立即中斷
 private struct NodeRow: View {
     let node: TransferNode
     let lane: ExecutorLane?
+    let onRemove: () -> Void
+    @State private var hovering = false
+
+    private var removable: Bool { TransferQueue.canRemove(node) }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -225,7 +232,17 @@ private struct NodeRow: View {
             if !node.isDirectory {
                 Text(ByteFormat.string(node.size)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
             }
-            stateIcon.frame(width: 16)
+            stateIcon.frame(width: 16).help(stateHelp)
+            Button(action: onRemove) { Image(systemName: "xmark.circle") }
+                .buttonStyle(.borderless)
+                .help("Remove from Task")
+                .frame(width: 16)
+                .opacity(hovering && removable ? 1 : 0)
+                .disabled(!removable)
+        }
+        .onHover { hovering = $0 }
+        .contextMenu {
+            Button("Remove from Task", action: onRemove).disabled(!removable)
         }
     }
 
@@ -236,8 +253,20 @@ private struct NodeRow: View {
         case .running: ProgressView().controlSize(.small)
         case .partial: Image(systemName: "pause.circle").foregroundStyle(.orange)
         case .done: Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-        case .skipped: Image(systemName: "arrow.uturn.right.circle").foregroundStyle(.secondary)
+        // 略過＝跳到下一個、沒有處理（不是重試）：灰色的「下一首」圖示，與完成的綠勾、失敗的紅驚嘆號一眼區分
+        case .skipped: Image(systemName: "forward.end.circle.fill").foregroundStyle(.secondary)
         case .failed: Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red)
+        }
+    }
+
+    private var stateHelp: String {
+        switch node.state {
+        case .pending: return String(localized: "Waiting")
+        case .running: return String(localized: "Running")
+        case .partial: return String(localized: "Interrupted; continues from where it stopped")
+        case .done: return String(localized: "Done")
+        case .skipped: return String(localized: "Skipped")
+        case .failed: return String(localized: "Failed")
         }
     }
 }

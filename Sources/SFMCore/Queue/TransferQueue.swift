@@ -74,6 +74,8 @@ public final class TransferQueue {
     /// 剛開始傳輸、還沒收到第一次進度回報的檔案節點：第一次回報只當起點（見 `applyProgress`）
     @ObservationIgnored private var awaitingBaseline: Set<UUID> = []
     @ObservationIgnored private var answers: [UUID: CheckedContinuation<ConflictAction, Never>] = [:]
+    /// 執行中工作被使用者移除的節點（與該工作的執行器共用，見 `RemovedNodes`）
+    @ObservationIgnored private var removals: [UUID: RemovedNodes] = [:]
 
     public init(store: QueueStore = .standard) {
         self.store = store
@@ -152,6 +154,50 @@ public final class TransferQueue {
         save()
     }
 
+    /// 能否從工作移除這個節點：執行中的只有檔案傳輸（可單獨中斷）與資料夾（停止處理剩下的子項）可以；
+    /// 刪除、改名、rsync 等一旦開始就無法收回
+    public static func canRemove(_ node: TransferNode) -> Bool {
+        node.state != .running || node.operation == .transferFile || node.operation == .makeDirectory
+    }
+
+    /// 從工作移除一個檔案或資料夾（含其中所有項目）：不再處理。
+    /// 正在傳的檔案立即中斷（工作其餘部分照常進行），留在目的端的不完整內容一併清除；
+    /// 移動工作裡被移除的項目保留在來源（所屬資料夾因此不會被刪除）。全部移除後工作也移出清單。
+    public func removeNode(_ nodeID: UUID, from jobID: UUID) {
+        guard let index = index(jobID),
+              let node = jobs[index].allNodes.first(where: { $0.id == nodeID }), Self.canRemove(node) else { return }
+        let subtree = node.flattened
+        let ids = subtree.map(\.id)
+        jobs[index].removeNode(nodeID)
+        removals[jobID]?.remove(ids)
+        for id in ids {
+            fileLanes[jobID]?[id] = nil
+            fileRates[id] = nil
+            awaitingBaseline.remove(id)
+        }
+        // 正在等使用者回答衝突的檔案：以「略過」解除等待（執行器隨後查到已移除）
+        let paths = Set(subtree.map(\.sourcePath))
+        for conflict in conflicts where conflict.jobID == jobID && paths.contains(conflict.sourcePath) {
+            conflicts.removeAll { $0.id == conflict.id }
+            answers.removeValue(forKey: conflict.id)?.resume(returning: .skip)
+        }
+        if jobs[index].state == .waitingForUser, !conflicts.contains(where: { $0.jobID == jobID }) {
+            jobs[index].state = .running
+        }
+        // 剩下的都成功了：失敗的工作改為完成
+        if jobs[index].state == .failed, !jobs[index].allNodes.contains(where: { $0.state == .failed }) {
+            jobs[index].state = .completed
+        }
+        // 不在傳的不完整檔案在這裡清；正在傳的由執行器中斷後自己清（它才知道實際寫到哪裡）
+        let partials = subtree.filter { $0.operation == .transferFile && $0.state == .partial }
+        let job = jobs[index]
+        if !partials.isEmpty {
+            Task { await discard(partials, of: job) }
+        }
+        save()
+        if job.planned, job.roots.isEmpty, tasks[jobID] == nil { remove(jobID) }
+    }
+
     public func clearFinished() {
         for job in jobs where job.state.isFinished { store.removeStaging(job.id) }
         jobs.removeAll { $0.state.isFinished }
@@ -206,6 +252,7 @@ public final class TransferQueue {
         save()
         let id = jobs[index].id
         rates[id] = TransferRate()
+        removals[id] = RemovedNodes()
         tasks[id] = Task { await self.execute(id, source: source, destination: destination) }
     }
 
@@ -233,6 +280,7 @@ public final class TransferQueue {
                 options: job.syncOptions, twoWay: job.syncTwoWay == true)
             executor.lanes = ExecutorLanes(parallelTransfers: parallel)
             executor.retry = retry
+            if let removed = removals[id] { executor.removed = removed }
             try await executor.run(roots)
             finish(id, cancelled: false)
         } catch is CancellationError {
@@ -246,6 +294,7 @@ public final class TransferQueue {
     private func finish(_ id: UUID, cancelled: Bool, failed: Bool = false) {
         tasks[id] = nil
         rates[id] = nil
+        removals[id] = nil
         for nodeID in (fileLanes[id] ?? [:]).keys { fileRates[nodeID] = nil }
         fileLanes[id] = nil
         guard let index = index(id) else { return }
@@ -285,10 +334,16 @@ public final class TransferQueue {
 
     /// 停止／移除時清除未完成檔案節點留在目的的不完整內容
     private func discardPartials(_ job: TransferJob) async {
+        let nodes = job.allNodes.filter { $0.operation == .transferFile && ($0.state == .partial || $0.state == .running) }
+        await discard(nodes, of: job)
+    }
+
+    /// 清除這些檔案節點留在目的的不完整內容，以及經 Mac 中繼的暫存檔
+    private func discard(_ nodes: [TransferNode], of job: TransferJob) async {
+        let staging = store.staging(for: job.id)
+        for node in nodes { try? FileManager.default.removeItem(at: staging.appendingPathComponent(node.id.uuidString)) }
         guard let destinationID = job.destination, let destination = resolver?(destinationID) else { return }
-        let targets = job.allNodes.filter { $0.operation == .transferFile && ($0.state == .partial || $0.state == .running) }
-            .map(\.targetPath)
-        for target in targets { try? await destination.discard(target) }
+        for node in nodes { try? await destination.discard(node.targetPath) }
     }
 
     private func cancelRunning(_ id: UUID) {
@@ -304,6 +359,8 @@ public final class TransferQueue {
 
     private func apply(_ id: UUID, _ event: NodeEvent) {
         guard let index = index(id) else { return }
+        // 已被使用者移除的節點：執行器可能還在途中回報，忽略
+        if let removed = removals[id], removed.contains(event.nodeID) { return }
         switch event {
         case let .state(nodeID, state, message):
             jobs[index].updateNode(nodeID) {

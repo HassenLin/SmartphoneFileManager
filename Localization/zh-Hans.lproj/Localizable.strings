@@ -309,6 +309,7 @@
 "Installed %@" = "已安装 %@";
 "Installing APK" = "正在安装 APK";
 "Internal Storage (/sdcard)" = "内部存储空间（/sdcard）";
+"Interrupted; continues from where it stopped" = "已中断，继续时从中断处接着传";
 "Invalid file name: %@" = "无效的文件名：%@";
 "Invalid package name: %@" = "无效的包名：%@";
 "Invalid permission mode: %@" = "无效的权限值：%@";
@@ -479,6 +480,7 @@
 "Reload with another encoding?" = "要以其他编码重新载入吗？";
 "Remove Bookmark for This Folder" = "移除此文件夹的书签";
 "Remove from List" = "从清单移除";
+"Remove from Task" = "从工作移除";
 "Rename" = "重新命名";
 "Renamed" = "已重新命名";
 "Rename…" = "重新命名…";
@@ -571,9 +573,11 @@
 "Skip Same Size, Resume Smaller" = "大小相同略过、较小续传";
 "Skip files of the same size; continue a smaller destination file from where it stopped (overwrite when resuming is not possible or the destination is larger)" = "大小相同就略过；目的档较小时从中断处接着传（不能续传或目的档较大时覆写）";
 "Skip files that already exist in the destination" = "略过目的端已存在的文件";
+"Skipped" = "已略过";
 "Smartphone File Manager" = "手机文件管理器";
 "Some devices report file times in UTC, others in local time. If times in this pane are off by a few hours, set an offset. It applies to the file list, conflict comparisons (newer / not newer) and sync." = "有的设备回报的文件时间是 UTC，有的是本地时间。这个窗格的时间差了几小时的话，在这里设置位移。会套用到文件列表、冲突的新旧比较与同步。";
 "Some items failed. See the task list for details." = "部分项目失败，详情请参阅工作清单。";
+"Some items were not moved; the source folder was kept" = "有项目未搬移，已保留来源文件夹";
 "Sort" = "排序";
 "Sort By" = "排序方式";
 "Source" = "来源";
@@ -662,6 +666,7 @@
 "Verify server certificate" = "验证伺服器凭证";
 "Version" = "版本";
 "Voltage" = "电压";
+"Waiting" = "等待中";
 "Waiting for device" = "等待设备连接";
 "Waiting for your choice" = "等待选择";
 "WebDAV and pCloud" = "WebDAV 与 pCloud";

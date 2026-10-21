@@ -124,8 +124,24 @@ public struct TransferNode: Codable, Sendable, Identifiable, Hashable {
         return false
     }
 
+    /// 從子孫中移除指定節點（含它的子孫）；找到回傳 true。不能移除自己（由上一層移除）
+    @discardableResult
+    mutating func removeDescendant(_ nodeID: UUID) -> Bool {
+        guard var list = children else { return false }
+        if let index = list.firstIndex(where: { $0.id == nodeID }) {
+            list.remove(at: index)
+            children = list
+            return true
+        }
+        for index in list.indices where list[index].removeDescendant(nodeID) {
+            children = list
+            return true
+        }
+        return false
+    }
+
     /// 所有節點（含自己）
-    var flattened: [TransferNode] { [self] + (children ?? []).flatMap(\.flattened) }
+    public var flattened: [TransferNode] { [self] + (children ?? []).flatMap(\.flattened) }
 
     /// 尚未列出內容的資料夾（總大小只含已知部分）
     public var isUnexpanded: Bool { expanded == false }
@@ -277,5 +293,14 @@ public struct TransferJob: Codable, Sendable, Identifiable {
 
     mutating func updateNode(_ nodeID: UUID, _ body: (inout TransferNode) -> Void) {
         for index in roots.indices where roots[index].update(nodeID, body) { return }
+    }
+
+    /// 從樹移除節點（含子孫）
+    mutating func removeNode(_ nodeID: UUID) {
+        if let index = roots.firstIndex(where: { $0.id == nodeID }) {
+            roots.remove(at: index)
+            return
+        }
+        for index in roots.indices where roots[index].removeDescendant(nodeID) { return }
     }
 }

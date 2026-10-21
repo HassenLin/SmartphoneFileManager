@@ -485,6 +485,32 @@ struct TransferQueueTests {
         #expect(store.files["/b/x.txt"] == Data("x".utf8))
     }
 
+    /// 資料夾裡有項目被略過（衝突選略過、或從工作移除）：拷貝時資料夾照樣完成；移動時保留來源資料夾、不算失敗
+    @Test func skippedChildDoesNotFailFolder() async throws {
+        for kind in [TransferKind.copy, .move] {
+            let (android, androidStore) = makeDevice(.android("A"))
+            androidStore.files["/a/dir/z.txt"] = Data("z".utf8)
+            let (other, otherStore) = makeDevice(.android("B"))
+            otherStore.directories.insert("/b/dir")
+            otherStore.files["/b/dir/y.txt"] = Data("old".utf8)
+            let queue = makeQueue([android, other])
+            let id = queue.enqueue(kind, items: try await items(android, ["/a/dir"]), from: android.id, to: other.id, directory: "/b")
+            try await wait { !queue.conflicts.isEmpty }
+            queue.answer(queue.conflicts[0].id, action: .skip, applyToAll: false)
+            let job = try await finished(queue, id)
+            #expect(job.state == .completed)
+            #expect(otherStore.files["/b/dir/z.txt"] == Data("z".utf8) && otherStore.files["/b/dir/y.txt"] == Data("old".utf8))
+            if kind == .move {
+                // 略過的 y.txt 沒搬走：來源資料夾與它都保留，搬走的 z.txt 已從來源刪除
+                #expect(job.roots.first?.state == .skipped)
+                #expect(androidStore.files["/a/dir/y.txt"] != nil && androidStore.files["/a/dir/z.txt"] == nil)
+                #expect(androidStore.directories.contains("/a/dir"))
+            } else {
+                #expect(job.roots.first?.state == .done)
+            }
+        }
+    }
+
     @Test func conflictApplyToAllAsksOnce() async throws {
         let (android, androidStore) = makeDevice(.android("A"))
         androidStore.files["/a/z.txt"] = Data("z".utf8)
@@ -583,6 +609,103 @@ struct TransferQueueTests {
         queue.stop(id)
         try await wait { leftover != nil }
         #expect(leftover?.contains("/b/p.bin") == false)
+    }
+
+    // MARK: 從工作移除單一項目
+
+    /// 三個檔案複製到慢的裝置（每次上傳 300ms），回傳佇列、目的、工作 ID
+    func removalSetup() async throws -> (TransferQueue, FakeStore, UUID) {
+        let (android, androidStore) = makeDevice(.android("A"))
+        for name in ["p", "q", "r"] { androidStore.files["/a/\(name).bin"] = Data(name.utf8) }
+        let (slow, slowStore) = makeDevice(.android("B"), delay: .milliseconds(300))
+        let queue = makeQueue([android, slow])
+        let id = try #require(queue.enqueue(.copy, items: try await items(android, ["/a/p.bin", "/a/q.bin", "/a/r.bin"]),
+                                            from: android.id, to: slow.id, directory: "/b"))
+        return (queue, slowStore, id)
+    }
+
+    func node(_ queue: TransferQueue, _ id: UUID, named name: String) -> TransferNode? {
+        queue.job(id)?.allNodes.first { $0.name == name }
+    }
+
+    /// 依執行順序的第 n 個節點（來源列表的順序不固定，不能用檔名假設先後）
+    func node(_ queue: TransferQueue, _ id: UUID, at position: Int) -> TransferNode? {
+        // 規劃完成前 roots 是空的
+        queue.job(id)?.roots.dropFirst(position).first
+    }
+
+    @Test func removingRunningFileInterruptsOnlyThatFile() async throws {
+        let (queue, slowStore, id) = try await removalSetup()
+        try await wait { node(queue, id, at: 0)?.state == .running }
+        let first = try #require(node(queue, id, at: 0))
+        slowStore.with { $0.files[first.targetPath] = Data("half".utf8) }   // 傳到一半留在目的端的內容
+        queue.removeNode(first.id, from: id)
+        #expect(queue.job(id)?.allNodes.contains { $0.id == first.id } == false)
+        let job = try await finished(queue, id)
+        // 其餘檔案照常完成，被移除的檔案中斷且不完整內容已清除
+        #expect(job.state == .completed && job.allNodes.count == 2)
+        #expect(slowStore.files.keys.filter { $0.hasPrefix("/b/") }.count == 2)
+        #expect(slowStore.files[first.targetPath] == nil)
+    }
+
+    @Test func removingPendingFileSkipsIt() async throws {
+        let (queue, slowStore, id) = try await removalSetup()
+        try await wait { node(queue, id, at: 0)?.state == .running }
+        let last = try #require(node(queue, id, at: 2))
+        queue.removeNode(last.id, from: id)
+        let job = try await finished(queue, id)
+        #expect(job.state == .completed && job.allNodes.count == 2)
+        #expect(slowStore.files.keys.filter { $0.hasPrefix("/b/") }.count == 2)
+        #expect(slowStore.files[last.targetPath] == nil)
+    }
+
+    @Test func removingPartialFileOfPausedJobDiscardsIt() async throws {
+        let (queue, slowStore, id) = try await removalSetup()
+        try await wait { node(queue, id, at: 0)?.state == .running }
+        queue.pause(id)
+        try await wait { queue.job(id)?.state == .paused }
+        let first = try #require(node(queue, id, at: 0))
+        #expect(first.state == .partial)
+        slowStore.with { $0.files[first.targetPath] = Data("half".utf8) }
+        queue.removeNode(first.id, from: id)
+        try await wait { slowStore.with { $0.files[first.targetPath] == nil } }
+        // 全部移除後工作也移出清單
+        for rest in try #require(queue.job(id)).roots { queue.removeNode(rest.id, from: id) }
+        #expect(queue.job(id) == nil)
+    }
+
+    @Test func removingDuringParallelTransfers() async throws {
+        let store = FakeStore()
+        store.directories.formUnion(["/a", "/a/dir", "/a/dir/sub"])
+        for index in 0..<6 { store.files["/a/dir/f\(index).txt"] = Data("\(index)".utf8) }
+        for index in 0..<3 { store.files["/a/dir/sub/g\(index).txt"] = Data("\(index)".utf8) }
+        var cloud = FakeSource(id: .network(UUID()), store: store, nativeCopy: false, delay: .milliseconds(150))
+        cloud.parallel = 3
+        var other = FakeSource(id: .network(UUID()), store: FakeStore(), nativeCopy: false)
+        other.parallel = 3
+        other.store.directories.insert("/b")
+        let queue = makeQueue([cloud, other])
+        let id = try #require(queue.enqueue(.copy, items: [FileItem(path: "/a/dir", isDirectory: true, size: 0)],
+                                            from: cloud.id, to: other.id, directory: "/b"))
+        // 並行傳輸中：移除一個正在傳的檔案（主或子執行器），以及整個子資料夾
+        try await wait { (queue.job(id)?.runningFiles.count ?? 0) > 1 }
+        let running = try #require(queue.job(id)?.runningFiles.first)
+        queue.removeNode(running.id, from: id)
+        queue.removeNode(try #require(node(queue, id, named: "sub")).id, from: id)
+        let job = try await finished(queue, id)
+        #expect(job.state == .completed)
+        #expect(other.store.files[running.targetPath] == nil)
+        #expect(!other.store.files.keys.contains { $0.hasPrefix("/b/dir/sub/") })
+        #expect(other.store.files.count == 5)
+    }
+
+    @Test func runningDeleteCannotBeRemoved() {
+        var node = TransferNode(name: "x", sourcePath: "/a/x", targetPath: "", isDirectory: false, size: 1, operation: .delete)
+        #expect(TransferQueue.canRemove(node))
+        node.state = .running
+        #expect(!TransferQueue.canRemove(node))
+        node.operation = .transferFile
+        #expect(TransferQueue.canRemove(node))
     }
 
     @Test func oneJobPerDeviceAtATime() async throws {

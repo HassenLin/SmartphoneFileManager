@@ -34,6 +34,50 @@ enum NodeEvent: Sendable {
     case expand(UUID, children: [TransferNode])
     /// 某個執行器開始傳這個檔案（工作列為每個執行器顯示一條進度）
     case fileStarted(UUID, lane: ExecutorLane)
+
+    var nodeID: UUID {
+        switch self {
+        case let .state(id, _, _), let .retarget(id, _), let .expand(id, _), let .fileStarted(id, _): return id
+        }
+    }
+}
+
+/// 使用者從執行中工作移除的節點（佇列在主執行緒寫入、執行器在背景查詢，以鎖保護）。
+///
+/// 執行器拿的是開始時的樹（快照），看不到佇列之後的修改，所以移除要經過這裡：
+/// - 還沒輪到的節點：執行器輪到時查到已移除，直接略過（不回報）。
+/// - 傳輸中的檔案：執行器開始傳時登記中斷方式，移除時立即中斷，執行器清掉目的端的不完整內容。
+/// - 執行中的資料夾：之後才列出的子項不在佇列的樹裡，由資料夾那一層查「上層已移除」就停（見 `runLevel`）。
+final class RemovedNodes: @unchecked Sendable {
+    private let lock = NSLock()
+    private var ids: Set<UUID> = []
+    private var cancels: [UUID: @Sendable () -> Void] = [:]
+
+    func contains(_ id: UUID) -> Bool {
+        lock.withLock { ids.contains(id) }
+    }
+
+    /// 標為已移除；其中正在傳的檔案立即中斷
+    func remove(_ newIDs: [UUID]) {
+        let toCancel = lock.withLock {
+            ids.formUnion(newIDs)
+            return newIDs.compactMap { cancels.removeValue(forKey: $0) }
+        }
+        toCancel.forEach { $0() }
+    }
+
+    /// 開始傳檔案時登記中斷方式；已被移除時回傳 false（呼叫端自己中斷）
+    func register(_ id: UUID, cancel: @escaping @Sendable () -> Void) -> Bool {
+        lock.withLock {
+            guard !ids.contains(id) else { return false }
+            cancels[id] = cancel
+            return true
+        }
+    }
+
+    func unregister(_ id: UUID) {
+        _ = lock.withLock { cancels.removeValue(forKey: id) }
+    }
 }
 
 /// 依工作樹逐節點執行（深度優先）。不持有狀態：每次繼續都以佇列保存的樹重新進入，
@@ -70,6 +114,8 @@ struct TransferExecutor: Sendable {
     var dispatcher: TransferDispatcher? = nil
     /// 單檔遇到暫時性錯誤（斷線、磁碟暫時讀不到）時的重試等待（見 `TransferRetry`）
     var retry = TransferRetry.standard
+    /// 使用者從這個工作移除的節點（佇列共用同一個）
+    var removed = RemovedNodes()
 
     /// 大檔門檻：涉及的非 Mac 來源中最小者（Mac 與裝置沒有門檻 → 不分大小檔）
     private var largeThreshold: Int64? {
@@ -86,7 +132,7 @@ struct TransferExecutor: Sendable {
         guard let destination else { return nil }
         return TransferExecutor(jobID: jobID, source: destination, destination: source, staging: staging,
                                 report: report, progress: progress, ask: ask, options: options, twoWay: twoWay, isSwapped: true,
-                                lanes: lanes, dispatcher: dispatcher, retry: retry)
+                                lanes: lanes, dispatcher: dispatcher, retry: retry, removed: removed)
     }
 
     func run(_ nodes: [TransferNode]) async throws {
@@ -139,31 +185,51 @@ struct TransferExecutor: Sendable {
         }
     }
 
-    /// 執行同一層的節點，回傳是否全部完成（`.done`；略過也算未完成，移動時父資料夾據此保留來源）。
+    /// 一層節點的處理結果（父資料夾據此決定自己的狀態）
+    struct LevelOutcome {
+        /// 全部 `.done`（略過、移除也算未完成：移動時父資料夾據此保留來源）
+        var allDone = true
+        /// 有節點失敗（只有略過的不算，見 `makeDirectory`）
+        var anyFailed = false
+
+        mutating func add(_ state: NodeState) {
+            if state != .done { allDone = false }
+            if state == .failed { anyFailed = true }
+        }
+    }
+
+    /// 執行同一層的節點，回傳處理結果。
     ///
     /// 逐檔時依序執行。有主／子執行器時，檔案依大小送進分派器、在背景傳，遍歷繼續往下；其他節點（資料夾、刪除、改名…）
     /// 依序在這裡執行。本層結束前等這一層送出的檔案都完成，父資料夾才判斷能否刪除來源。
-    private func runLevel(_ nodes: [TransferNode]) async throws -> Bool {
-        var allDone = true
+    /// `parent`：這一層所屬的資料夾；它被移除時不再處理剩下的節點（之後才列出的子項不在佇列的樹裡，查不到自己）
+    private func runLevel(_ nodes: [TransferNode], parent: UUID? = nil) async throws -> LevelOutcome {
+        var outcome = LevelOutcome()
+        let parentRemoved = { parent.map(removed.contains) ?? false }
         guard let dispatcher else {
             for node in nodes {
                 try Task.checkCancellation()
-                if try await runNode(node, on: .main) != .done { allDone = false }
+                if parentRemoved() { return LevelOutcome(allDone: false) }
+                outcome.add(try await runNode(node, on: .main))
             }
-            return allDone
+            return outcome
         }
         var submitted: [UUID] = []
         for node in nodes {
             try Task.checkCancellation()
+            if parentRemoved() {
+                outcome.allDone = false
+                break
+            }
             let finished = node.state == .done || node.state == .skipped
             if node.operation == .transferFile && !finished {
                 submitted.append(try await dispatcher.submit(node, large: isLarge(node), handoffable: isDownloadToMac(node)))
-            } else if try await runNode(node, on: .main) != .done {
-                allDone = false
+            } else {
+                outcome.add(try await runNode(node, on: .main))
             }
         }
-        for id in submitted where try await dispatcher.result(id) != .done { allDone = false }
-        return allDone
+        for id in submitted { outcome.add(try await dispatcher.result(id)) }
+        return outcome
     }
 
     /// 這個檔案是否「從網路下載到 Mac」——只有這種才值得交給主執行器接手（上傳一律單一連線；
@@ -180,6 +246,8 @@ struct TransferExecutor: Sendable {
     /// `lane`：由哪個執行器處理（只影響單檔傳輸的連線數；資料夾等其他節點不分）
     private func runNode(_ node: TransferNode, on lane: ExecutorLane) async throws -> NodeState {
         if node.state == .done || node.state == .skipped || node.operation == .rejected { return node.state }
+        // 使用者已從工作移除：不處理，也不回報（佇列的樹裡已沒有它）
+        if removed.contains(node.id) { return .skipped }
         if node.reversed == true && !isSwapped, let swapped { return try await swapped.runNode(node, on: lane) }
         do {
             let state: NodeState
@@ -189,9 +257,10 @@ struct TransferExecutor: Sendable {
             case .rsync: state = try await rsync(node)
             case .nativeMove: state = try await nativeMove(node)
             case .makeDirectory: state = try await makeDirectory(node)
-            case .transferFile: state = try await transferFile(node, on: lane)
+            case .transferFile: state = try await removableTransfer(node, on: lane)
             case .rejected: state = node.state
             }
+            if removed.contains(node.id) { return .skipped }
             if state != .partial, node.operation != .rsync { await report(.state(node.id, state)) }
             return state
         } catch is CancellationError {
@@ -276,13 +345,30 @@ struct TransferExecutor: Sendable {
             children = try await TransferPlanner.children(of: node, from: source)
             await report(.expand(node.id, children: children))
         }
-        let allDone = try await runLevel(children)
-        // 移動：子項全部完成才刪除來源資料夾（有略過或失敗的項目時保留，避免刪掉未搬走的檔案）
-        if node.deleteSourceAfter {
-            guard allDone else { return .failed }
-            try await source.delete(node.sourcePath)
+        let level = try await runLevel(children, parent: node.id)
+        if level.allDone {
+            if node.deleteSourceAfter { try await source.delete(node.sourcePath) }
+            return .done
         }
-        return allDone ? .done : .failed
+        // 有子項失敗：資料夾也失敗。只是略過（衝突選略過、使用者從工作移除）不算失敗——
+        // 拷貝時資料夾照樣完成；移動時保留來源資料夾（避免刪掉沒搬走的檔案），資料夾標為略過並說明
+        if level.anyFailed { return .failed }
+        guard node.deleteSourceAfter else { return .done }
+        await report(.state(node.id, .skipped, message: String(localized: "Some items were not moved; the source folder was kept")))
+        return .skipped
+    }
+
+    /// 單檔傳輸放在可單獨中斷的工作裡：使用者從工作移除這個檔案時只停它（`RemovedNodes`），
+    /// 傳完的部分由 `transferFile` 清掉，這裡回報「略過」讓同一層繼續處理其餘節點
+    private func removableTransfer(_ node: TransferNode, on lane: ExecutorLane) async throws -> NodeState {
+        let task = Task { try await transferFile(node, on: lane) }
+        if !removed.register(node.id, cancel: { task.cancel() }) { task.cancel() }
+        defer { removed.unregister(node.id) }
+        do {
+            return try await withTaskCancellationHandler { try await task.value } onCancel: { task.cancel() }
+        } catch is CancellationError where removed.contains(node.id) && !Task.isCancelled {
+            return .skipped
+        }
     }
 
     private func transferFile(_ node: TransferNode, on lane: ExecutorLane) async throws -> NodeState {
@@ -317,7 +403,7 @@ struct TransferExecutor: Sendable {
                                    stagingKey: node.id.uuidString, connections: connections, progress: progress)
                 break
             } catch is CancellationError {
-                await report(.state(node.id, .partial))
+                await interrupted(node, target: target, destination: destination)
                 throw CancellationError()
             } catch {
                 // 排隊／暫停期間來源被移走或刪除（例如另一個移動工作）：沒有東西可傳，略過並清掉目的端的不完整內容。
@@ -337,7 +423,7 @@ struct TransferExecutor: Sendable {
                 do {
                     try await Task.sleep(for: delay)
                 } catch {
-                    await report(.state(node.id, .partial))
+                    await interrupted(node, target: target, destination: destination)
                     throw CancellationError()
                 }
             }
@@ -345,6 +431,21 @@ struct TransferExecutor: Sendable {
         self.progress(node.id, size)
         if node.deleteSourceAfter { try await source.delete(node.sourcePath) }
         return .done
+    }
+
+    /// 檔案傳到一半被中斷：暫停／停止時保留不完整內容（`partial`，繼續時接著傳；停止由佇列清除）；
+    /// 使用者把它從工作移除時，佇列的樹裡已沒有它，由這裡清掉目的端與經 Mac 中繼的暫存（只有這裡知道實際的目的路徑）
+    private func interrupted(_ node: TransferNode, target: String, destination: any FileSource) async {
+        guard removed.contains(node.id) else {
+            await report(.state(node.id, .partial))
+            return
+        }
+        // 這裡是已取消的工作，網路請求會直接以取消失敗：清除放在不受取消影響的獨立工作裡做完
+        let local = staging.appendingPathComponent(node.id.uuidString)
+        await Task.detached {
+            try? await destination.discard(target)
+            try? FileManager.default.removeItem(at: local)
+        }.value
     }
 
     /// 傳輸失敗後確認：來源檔已不存在。Mac 來源所在的磁碟整顆不見時不算（那是磁碟沒接上，見 `isRetryable`）

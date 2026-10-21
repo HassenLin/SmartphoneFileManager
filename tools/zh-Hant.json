@@ -710,5 +710,10 @@
 "Checking sign-in…": "正在確認登入狀態…",
 "Checking…": "確認中…",
 "Sign in again": "請重新登入",
-"Signed in (unconfirmed)": "已登入（未確認）"
+"Signed in (unconfirmed)": "已登入（未確認）",
+"Remove from Task": "從工作移除",
+"Waiting": "等待中",
+"Interrupted; continues from where it stopped": "已中斷，繼續時從中斷處接著傳",
+"Skipped": "已略過",
+"Some items were not moved; the source folder was kept": "有項目未搬移，已保留來源資料夾"
 }
