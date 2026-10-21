@@ -7,15 +7,19 @@ struct MainWindowView: View {
     @Bindable var app: AppModel
 
     var body: some View {
-        HSplitView {
-            if !app.isLeftPaneCollapsed {
-                BrowserPaneView(app: app, side: .left)
+        // 工作面板：底部、可收合；與窗格上下排列，顯示時兩個窗格縮短讓出高度。
+        // 不可用 safeAreaInset：窗格裡的 AppKit 表格（NSScrollView）會延伸到 safe area 底下，面板就蓋在檔案列表上
+        VStack(spacing: 0) {
+            HSplitView {
+                if !app.isLeftPaneCollapsed {
+                    BrowserPaneView(app: app, side: .left)
+                }
+                BrowserPaneView(app: app, side: .right)
             }
-            BrowserPaneView(app: app, side: .right)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            TasksPanel(app: app)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        // 工作面板：底部、可收合（不擋操作）；衝突詢問以 sheet 顯示（與 app.sheet 分掛在不同 view 上）
-        .safeAreaInset(edge: .bottom, spacing: 0) { TasksPanel(app: app) }
+        // 衝突詢問以 sheet 顯示（與 app.sheet 分掛在不同 view 上）
         .sheet(item: Binding(get: { app.queue.conflicts.first }, set: { _ in })) { conflict in
             ConflictSheet(conflict: conflict, queue: app.queue).interactiveDismissDisabled()
         }

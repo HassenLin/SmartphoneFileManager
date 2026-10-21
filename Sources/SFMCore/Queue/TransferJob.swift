@@ -84,6 +84,9 @@ public struct TransferNode: Codable, Sendable, Identifiable, Hashable {
     /// 資料夾內容是否已列出。`false`＝尚未展開：執行到這個資料夾時才列出內容（`TransferExecutor.makeDirectory`），
     /// 工作不必等整棵樹掃描完才開始。nil＝已展開（同步規劃、舊佇列檔都是事先展開好的）
     public var expanded: Bool?
+    /// 開始傳輸前就決定好的衝突處理（`TransferExecutor.precheckConflicts` 先問；執行到時照做、不再詢問）。
+    /// 略過的直接標為 `.skipped`、改名的已改 `targetPath`；nil＝沒有衝突或尚未檢查（舊佇列檔沒有這個欄位）
+    public var conflictDecision: ConflictResolution?
     /// 反方向的節點（雙向同步：目的 → 來源）。`sourcePath` 在工作的目的端、`targetPath` 在工作的來源端；
     /// 執行器遇到時以對調來源／目的的執行器處理。nil＝正方向（舊佇列檔沒有這個欄位）
     public var reversed: Bool?
@@ -170,6 +173,19 @@ public enum ConflictAction: String, Codable, Sendable, CaseIterable {
     /// 比較修改時間的容許誤差：FAT（記憶卡）只精確到 2 秒，複製後時間可能差一點
     static let timeTolerance: TimeInterval = 2
 
+    /// 依這個選擇略過時的原因（寫在工作清單的檔名後）。條件式的規則依它判斷的條件說明；
+    /// 「大小不同或來源較新才覆寫」略過＝大小相同且來源沒有較新，以大小說明（較容易對照）
+    public var skipReason: String {
+        switch self {
+        case .overwriteIfDifferentSize, .overwriteIfDifferentSizeOrNewer, .resumeIfSmaller:
+            return String(localized: "The destination file is the same size")
+        case .overwriteIfNewer:
+            return String(localized: "The destination already has a file with the same name that is as new or newer")
+        case .skip, .resume, .overwrite, .rename:
+            return String(localized: "Skipped by user")
+        }
+    }
+
     /// 對單一衝突實際執行的動作
     public func resolve(source: FileStat, target: FileStat, canResume: Bool) -> ConflictResolution {
         let differentSize = source.size != target.size
@@ -193,8 +209,8 @@ public enum ConflictAction: String, Codable, Sendable, CaseIterable {
     }
 }
 
-/// 對單一衝突實際執行的動作（`ConflictAction.resolve` 的結果）
-public enum ConflictResolution: Sendable, Equatable {
+/// 對單一衝突實際執行的動作（`ConflictAction.resolve` 的結果；先問的結果記在節點上，見 `TransferNode.conflictDecision`）
+public enum ConflictResolution: String, Codable, Sendable, Equatable {
     case resume, overwrite, rename, skip
 }
 

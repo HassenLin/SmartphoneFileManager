@@ -511,6 +511,41 @@ struct TransferQueueTests {
         }
     }
 
+    /// 衝突先問完才開始傳（含已存在的目的資料夾裡的檔案）：使用者離開前就能答完，不會傳到一半停在對話框
+    @Test func conflictsAreAskedBeforeAnyTransfer() async throws {
+        let (android, androidStore) = makeDevice(.android("A"))
+        androidStore.files["/a/z.txt"] = Data("z".utf8)
+        let (other, otherStore) = makeDevice(.android("B"))
+        otherStore.files["/b/z.txt"] = Data("old".utf8)
+        otherStore.directories.insert("/b/dir")
+        otherStore.files["/b/dir/y.txt"] = Data("old".utf8)
+        let queue = makeQueue([android, other])
+        let id = try #require(queue.enqueue(.copy, items: try await items(android, ["/a/x.txt", "/a/z.txt", "/a/dir"]),
+                                            from: android.id, to: other.id, directory: "/b"))
+        var answered: [String] = []
+        for _ in 0..<2 {
+            try await wait { !queue.conflicts.isEmpty }
+            // 問的時候還沒有任何檔案開始傳
+            #expect(otherStore.files["/b/x.txt"] == nil)
+            #expect(queue.job(id)?.allNodes.contains { !$0.isDirectory && $0.state != .pending && $0.state != .skipped } == false)
+            let conflict = queue.conflicts[0]
+            answered.append(conflict.name)
+            queue.answer(conflict.id, action: conflict.name == "z.txt" ? .skip : .overwrite, applyToAll: false)
+        }
+        #expect(Set(answered) == ["z.txt", "y.txt"])
+        let job = try await finished(queue, id)
+        #expect(job.state == .completed)
+        #expect(otherStore.files["/b/x.txt"] == Data("x".utf8))
+        #expect(otherStore.files["/b/z.txt"] == Data("old".utf8))
+        #expect(otherStore.files["/b/dir/y.txt"] == Data("y".utf8))
+        // 答案記在節點上（工作清單據此在檔名後顯示略過／覆寫）
+        let z = try #require(job.allNodes.first { $0.name == "z.txt" })
+        let y = try #require(job.allNodes.first { $0.name == "y.txt" })
+        #expect(z.state == .skipped && z.conflictDecision == .skip)
+        #expect(z.message == ConflictAction.skip.skipReason)
+        #expect(y.state == .done && y.conflictDecision == .overwrite)
+    }
+
     @Test func conflictApplyToAllAsksOnce() async throws {
         let (android, androidStore) = makeDevice(.android("A"))
         androidStore.files["/a/z.txt"] = Data("z".utf8)
@@ -543,7 +578,10 @@ struct TransferQueueTests {
         #expect(job.state == .completed && job.conflictPolicy == .overwriteIfDifferentSize)
         #expect(otherStore.files["/b/x.txt"] == Data("y".utf8))
         #expect(otherStore.files["/b/z.txt"] == Data("z".utf8))
-        #expect(job.allNodes.first { $0.name == "x.txt" }?.state == .skipped)
+        let x = job.allNodes.first { $0.name == "x.txt" }
+        #expect(x?.state == .skipped)
+        // 檔名後寫出略過的原因（依規則：大小相同）
+        #expect(x?.message == ConflictAction.overwriteIfDifferentSize.skipReason)
     }
 
     // MARK: 暫停／繼續／停止
@@ -900,6 +938,16 @@ struct ConflictActionTests {
         // 套用到全部的「續傳」遇到不能續傳的檔案改為覆寫
         #expect(ConflictAction.resume.resolve(source: stat(10, 0), target: stat(5, 0), canResume: false) == .overwrite)
         #expect(ConflictAction.rename.resolve(source: stat(1, 0), target: stat(1, 0), canResume: false) == .rename)
+    }
+
+    /// 略過原因：依大小的規則說「大小相同」、依新舊的說「已有新的同名檔案」、直接選略過說「使用者略過」
+    @Test func skipReasons() {
+        let sameSize = ConflictAction.overwriteIfDifferentSize.skipReason
+        let notNewer = ConflictAction.overwriteIfNewer.skipReason
+        let byUser = ConflictAction.skip.skipReason
+        #expect(Set([sameSize, notNewer, byUser]).count == 3)
+        #expect(ConflictAction.resumeIfSmaller.skipReason == sameSize)
+        #expect(ConflictAction.overwriteIfDifferentSizeOrNewer.skipReason == sameSize)
     }
 
     @Test func skipIfSameSize() {

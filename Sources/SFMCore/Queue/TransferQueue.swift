@@ -267,7 +267,7 @@ public final class TransferQueue {
                 jobs[index].planned = true
                 save()
             }
-            guard let roots = self.job(id)?.roots else { return }
+            guard var roots = self.job(id)?.roots else { return }
             // 同時傳輸數：取涉及的非 Mac 來源中最小的上限（Mac 本機不限制；裝置固定 1，所以 手機 ⇄ 雲端 仍逐檔）。
             // ≥ 2 時建立主執行器（大檔）＋子執行器（小檔），執行器依大小分流（見 TransferExecutor）
             let parallel = [source, destination].compactMap { $0 }.filter { $0.id.kind != .mac }
@@ -281,6 +281,12 @@ public final class TransferQueue {
             executor.lanes = ExecutorLanes(parallelTransfers: parallel)
             executor.retry = retry
             if let removed = removals[id] { executor.removed = removed }
+            // 衝突先問完再開始傳（同步一律覆寫、刪除沒有目的端，不必問）
+            if job.kind == .copy || job.kind == .move {
+                setMessage(id, String(localized: "Checking for conflicts…"))
+                roots = try await executor.precheckConflicts(roots)
+                setMessage(id, nil)
+            }
             try await executor.run(roots)
             finish(id, cancelled: false)
         } catch is CancellationError {
@@ -346,6 +352,10 @@ public final class TransferQueue {
         for node in nodes { try? await destination.discard(node.targetPath) }
     }
 
+    private func setMessage(_ id: UUID, _ message: String?) {
+        if let index = index(id) { jobs[index].message = message }
+    }
+
     private func cancelRunning(_ id: UUID) {
         tasks[id]?.cancel()
         // 正在等待衝突回答的工作：以「略過」解除等待，執行器隨後檢查到取消即結束
@@ -386,6 +396,9 @@ public final class TransferQueue {
                 $0.children = children
                 $0.expanded = nil
             }
+            save()
+        case let .decide(nodeID, resolution):
+            jobs[index].updateNode(nodeID) { $0.conflictDecision = resolution }
             save()
         case let .retarget(nodeID, path):
             jobs[index].updateNode(nodeID) {

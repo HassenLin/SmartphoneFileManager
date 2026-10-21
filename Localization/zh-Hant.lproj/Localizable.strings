@@ -98,6 +98,7 @@
 "Cannot read device info" = "無法讀取裝置資訊";
 "Charging" = "充電中";
 "Check Again" = "重新檢查";
+"Checking for conflicts…" = "正在檢查衝突…";
 "Checking sign-in…" = "正在確認登入狀態…";
 "Checking…" = "確認中…";
 "Choose Folder…" = "選擇資料夾…";
@@ -434,6 +435,7 @@
 "Overwrite only when the sizes differ; skip files of the same size" = "大小不同才覆寫；大小相同就略過";
 "Overwrite only when the source is newer; skip when the destination is as new or newer" = "來源較新才覆寫；目的檔一樣新或較新就略過（日期不明時也略過）";
 "Overwrite when the sizes differ or the source is newer; otherwise skip" = "大小不同或來源較新就覆寫；否則略過";
+"Overwritten" = "已覆寫";
 "Owner" = "擁有者";
 "Pair" = "配對";
 "Pairing code" = "配對碼";
@@ -494,6 +496,7 @@
 "Resume All" = "全部繼續";
 "Resume Transfer" = "續傳";
 "Resume uploads" = "續傳上傳";
+"Resumed" = "已續傳";
 "Resuming is not available for this device (iPhone transfers always restart)." = "此裝置無法續傳（iPhone 傳輸一律重新開始）。";
 "Retries" = "重試次數";
 "Retry" = "重試";
@@ -574,6 +577,7 @@
 "Skip files of the same size; continue a smaller destination file from where it stopped (overwrite when resuming is not possible or the destination is larger)" = "大小相同就略過；目的檔較小時從中斷處接著傳（不能續傳或目的檔較大時覆寫）";
 "Skip files that already exist in the destination" = "略過目的端已存在的檔案";
 "Skipped" = "已略過";
+"Skipped by user" = "使用者略過";
 "Smartphone File Manager" = "手機檔案管理器";
 "Some devices report file times in UTC, others in local time. If times in this pane are off by a few hours, set an offset. It applies to the file list, conflict comparisons (newer / not newer) and sync." = "有的裝置回報的檔案時間是 UTC，有的是本機時間。這個窗格的時間差了幾小時的話，在這裡設定位移。會套用到檔案列表、衝突的新舊比較與同步。";
 "Some items failed. See the task list for details." = "部分項目失敗，詳情請見工作清單。";
@@ -612,7 +616,9 @@
 "The MTP device was disconnected" = "MTP 裝置已中斷連線";
 "The SFTP server's host key has changed. Reset it in the account options if this is expected." = "SFTP 伺服器的主機金鑰已改變。若是預期中的變更（例如伺服器重灌），請在帳號選項中重設。";
 "The bundled adb is missing from this build. Rebuild with tools/make-app.sh, or use option 2 or 3." = "此版本缺少內附的 adb。請以 tools/make-app.sh 重新建置，或改用方式二、三。";
+"The destination already has a file with the same name that is as new or newer" = "目的地已有新的同名檔案";
 "The destination file is not smaller than the source, so there is nothing to continue." = "目的檔沒有比來源小，沒有可接著傳的部分。";
+"The destination file is the same size" = "目的地檔案大小相同";
 "The destination is not available" = "目的地無法使用";
 "The file cannot be decoded as %@." = "此檔案無法以 %@ 解碼。";
 "The main executor always downloads over several connections. With 2 or more simultaneous transfers, it takes the large files and the other slots move small files one connection each. With 1, it is the only executor, so every download uses several connections. Uploads always use one connection per file. With a phone on the other side, transfers stay one at a time. FTP servers often limit connections per IP." = "主執行器一律以多條連線下載。同時傳輸數 ≥ 2 時，主執行器負責大檔，其餘名額（子執行器）傳小檔，各一條連線；設為 1 時主執行器是唯一的執行器，每個下載都用多條連線。上傳每個檔案一律一條連線。另一端是手機時仍逐檔。FTP 伺服器常限制每個 IP 的連線數。";

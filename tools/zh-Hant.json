@@ -715,5 +715,11 @@
 "Waiting": "等待中",
 "Interrupted; continues from where it stopped": "已中斷，繼續時從中斷處接著傳",
 "Skipped": "已略過",
-"Some items were not moved; the source folder was kept": "有項目未搬移，已保留來源資料夾"
+"Some items were not moved; the source folder was kept": "有項目未搬移，已保留來源資料夾",
+"Resumed": "已續傳",
+"Overwritten": "已覆寫",
+"Checking for conflicts…": "正在檢查衝突…",
+"The destination file is the same size": "目的地檔案大小相同",
+"The destination already has a file with the same name that is as new or newer": "目的地已有新的同名檔案",
+"Skipped by user": "使用者略過"
 }

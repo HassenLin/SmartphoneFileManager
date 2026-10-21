@@ -221,6 +221,9 @@ private struct NodeRow: View {
                 .foregroundStyle(node.isDirectory ? Color.accentColor : .secondary)
                 .frame(width: 16)
             Text(node.name).lineLimit(1).truncationMode(.middle)
+            if let tag {
+                Text(tag.text).font(.caption.weight(.semibold)).foregroundStyle(tag.color)
+            }
             if let message = node.message {
                 Text(message).font(.caption).foregroundStyle(node.state == .failed ? .red : .secondary).lineLimit(1)
             }
@@ -246,12 +249,31 @@ private struct NodeRow: View {
         }
     }
 
+    /// 這個檔案要續傳：中斷過（partial），或衝突時選了續傳（先問的答案）
+    private var resumes: Bool {
+        node.state == .partial || (node.conflictDecision == .resume && node.state != .skipped)
+    }
+
+    /// 檔名後的文字：略過、續傳、覆寫（一眼看出這個檔案會／已經怎麼處理）
+    private var tag: (text: String, color: Color)? {
+        if node.state == .skipped { return (String(localized: "Skipped"), .secondary) }
+        if resumes {
+            return node.state == .done ? (String(localized: "Resumed"), .secondary) : (String(localized: "Resume Transfer"), .orange)
+        }
+        if node.conflictDecision == .overwrite {
+            return node.state == .done ? (String(localized: "Overwritten"), .secondary) : (String(localized: "Overwrite"), .orange)
+        }
+        return nil
+    }
+
     @ViewBuilder
     private var stateIcon: some View {
         switch node.state {
+        // 等著續傳的檔案用「＋」（從已有的部分接著加上去），與一般等待的空圈區分
+        case .pending where resumes: Image(systemName: "plus.circle").foregroundStyle(.orange)
         case .pending: Image(systemName: "circle").foregroundStyle(.tertiary)
         case .running: ProgressView().controlSize(.small)
-        case .partial: Image(systemName: "pause.circle").foregroundStyle(.orange)
+        case .partial: Image(systemName: "plus.circle").foregroundStyle(.orange)
         case .done: Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
         // 略過＝跳到下一個、沒有處理（不是重試）：灰色的「下一首」圖示，與完成的綠勾、失敗的紅驚嘆號一眼區分
         case .skipped: Image(systemName: "forward.end.circle.fill").foregroundStyle(.secondary)
@@ -261,6 +283,7 @@ private struct NodeRow: View {
 
     private var stateHelp: String {
         switch node.state {
+        case .pending where resumes: return String(localized: "Continue from the size of the destination file")
         case .pending: return String(localized: "Waiting")
         case .running: return String(localized: "Running")
         case .partial: return String(localized: "Interrupted; continues from where it stopped")

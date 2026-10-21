@@ -34,10 +34,13 @@ enum NodeEvent: Sendable {
     case expand(UUID, children: [TransferNode])
     /// 某個執行器開始傳這個檔案（工作列為每個執行器顯示一條進度）
     case fileStarted(UUID, lane: ExecutorLane)
+    /// 開始傳輸前先問好的衝突處理（見 `TransferExecutor.precheckConflicts`）
+    case decide(UUID, ConflictResolution)
 
     var nodeID: UUID {
         switch self {
-        case let .state(id, _, _), let .retarget(id, _), let .expand(id, _), let .fileStarted(id, _): return id
+        case let .state(id, _, _), let .retarget(id, _), let .expand(id, _), let .fileStarted(id, _), let .decide(id, _):
+            return id
         }
     }
 }
@@ -185,6 +188,92 @@ struct TransferExecutor: Sendable {
         }
     }
 
+    // MARK: 衝突先問
+
+    /// 開始傳輸前先找出所有衝突、一次問完，答案記在節點上（`conflictDecision`），執行到時照做。
+    /// 否則衝突要等傳到那個檔案才問：使用者以為工作會自己跑完而離開，回來才發現傳到一半停在對話框。
+    ///
+    /// 只看目的端已存在的資料夾：目的資料夾不存在＝裡面不可能衝突，不必展開（大樹不會因此先掃描一遍）；
+    /// 存在時才展開來源資料夾（`.expand` 回報給佇列保存，執行時不必再列）。每個目的資料夾只列一次。
+    /// 先問時沒發現、執行時才出現的衝突（期間有人放了同名檔案）照舊在執行時詢問。
+    func precheckConflicts(_ nodes: [TransferNode]) async throws -> [TransferNode] {
+        var listings: [String: [String: FileStat]] = [:]
+        var result = nodes
+        for index in result.indices { result[index] = try await precheck(result[index], listings: &listings) }
+        return result
+    }
+
+    private func precheck(_ node: TransferNode, listings: inout [String: [String: FileStat]]) async throws -> TransferNode {
+        try Task.checkCancellation()
+        // 已處理過、已決定，或自己中斷／失敗過的（執行時直接續傳）不必問
+        guard node.state == .pending, node.conflictDecision == nil, !removed.contains(node.id) else { return node }
+        var node = node
+        switch node.operation {
+        case .makeDirectory:
+            guard let destination,
+                  try await existing(node.targetPath, in: destination, listings: &listings)?.isDirectory == true else { return node }
+            if node.isUnexpanded {
+                let children = try await TransferPlanner.children(of: node, from: source)
+                node.children = children
+                node.expanded = nil
+                await report(.expand(node.id, children: children))
+            }
+            var children = node.children ?? []
+            for index in children.indices { children[index] = try await precheck(children[index], listings: &listings) }
+            node.children = children
+        case .transferFile:
+            guard let destination, let found = try await existing(node.targetPath, in: destination, listings: &listings),
+                  !found.isDirectory else { return node }
+            let canResume = found.size < node.size && pairResumable(destination)
+            let resolution = try await resolveConflict(node, target: node.targetPath, existing: found, allowResume: canResume)
+            try await record(resolution, on: &node, in: destination)
+        case .nativeMove:
+            guard let found = try await existing(node.targetPath, in: source, listings: &listings) else { return node }
+            let resolution = try await resolveConflict(node, target: node.targetPath, existing: found, allowResume: false)
+            try await record(resolution, on: &node, in: source)
+        default:
+            break
+        }
+        return node
+    }
+
+    /// 目的端同名項目（列一次資料夾、記下來；資料夾不存在或列不出來時當作沒有，執行時仍會再確認）
+    private func existing(_ path: String, in store: any FileSource,
+                          listings: inout [String: [String: FileStat]]) async throws -> FileStat? {
+        let directory = RemotePath.parent(of: path)
+        let key = "\(store.id)|\(directory)"
+        if listings[key] == nil {
+            do {
+                let items = try await store.list(directory, includeHidden: true)
+                listings[key] = Dictionary(items.map { ($0.name, FileStat(size: $0.size, modified: $0.modified, isDirectory: $0.isDirectory)) },
+                                           uniquingKeysWith: { first, _ in first })
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                listings[key] = [:]
+            }
+        }
+        return listings[key]?[RemotePath.name(of: path)]
+    }
+
+    /// 把先問的答案記在節點上並回報佇列保存：略過立即標為略過、保留兩者立即改目的檔名，其餘執行時照做
+    private func record(_ resolution: ConflictResolution, on node: inout TransferNode, in store: any FileSource) async throws {
+        switch resolution {
+        case .skip:
+            // 略過的原因已由 resolveConflict 回報給佇列
+            node.state = .skipped
+        case .rename:
+            let target = try await uniqueTarget(node.targetPath, in: store)
+            node.targetPath = target
+            node.name = RemotePath.name(of: target)
+            await report(.retarget(node.id, path: target))
+        case .overwrite, .resume:
+            break
+        }
+        node.conflictDecision = resolution
+        await report(.decide(node.id, resolution))
+    }
+
     /// 一層節點的處理結果（父資料夾據此決定自己的狀態）
     struct LevelOutcome {
         /// 全部 `.done`（略過、移除也算未完成：移動時父資料夾據此保留來源）
@@ -315,7 +404,7 @@ struct TransferExecutor: Sendable {
         await report(.state(node.id, .running))
         var target = node.targetPath
         if let existing = try await source.stat(target) {
-            switch try await resolveConflict(node, target: target, existing: existing, allowResume: false) {
+            switch try await answer(node, target: target, existing: existing, canResume: false) {
             case .skip: return .skipped
             case .overwrite: try await source.discard(target)
             case .rename:
@@ -378,7 +467,7 @@ struct TransferExecutor: Sendable {
         let ours = node.state == .partial || node.state == .running || node.state == .failed
         if !ours, let existing = try await destination.stat(target) {
             let canResume = !existing.isDirectory && existing.size < node.size && pairResumable(destination)
-            switch try await resolveConflict(node, target: target, existing: existing, allowResume: canResume) {
+            switch try await answer(node, target: target, existing: existing, canResume: canResume) {
             case .skip: return .skipped
             case .resume: break
             case .overwrite: try await destination.discard(target)
@@ -497,6 +586,22 @@ struct TransferExecutor: Sendable {
         return source.capabilities.resumable && destination.capabilities.resumable
     }
 
+    /// 先問過的答案（見 `precheckConflicts`）。保留兩者的已改好檔名，執行時仍撞名＝新出現的衝突，要再問；
+    /// 選了續傳但現在不能續傳（目的檔變大了）改為覆寫，與「套用到全部」的慣例相同
+    private func decided(_ node: TransferNode, canResume: Bool) -> ConflictResolution? {
+        switch node.conflictDecision {
+        case .none, .rename: return nil
+        case .resume: return canResume ? .resume : .overwrite
+        case let decision?: return decision
+        }
+    }
+
+    /// 執行時遇到衝突：有先問過的答案就照做，否則現在問
+    private func answer(_ node: TransferNode, target: String, existing: FileStat, canResume: Bool) async throws -> ConflictResolution {
+        if let decision = decided(node, canResume: canResume) { return decision }
+        return try await resolveConflict(node, target: target, existing: existing, allowResume: canResume)
+    }
+
     private func resolveConflict(_ node: TransferNode, target: String, existing: FileStat,
                                  allowResume: Bool) async throws -> ConflictResolution {
         let sourceStat = (try? await source.stat(node.sourcePath))
@@ -505,7 +610,10 @@ struct TransferExecutor: Sendable {
                                         targetPath: target, source: sourceStat, target: existing, canResume: allowResume)
         let action = await ask(conflict)
         try Task.checkCancellation()
-        return action.resolve(source: sourceStat, target: existing, canResume: allowResume)
+        let resolution = action.resolve(source: sourceStat, target: existing, canResume: allowResume)
+        // 略過時把原因寫在檔案上（先問與執行時遇到的衝突都經過這裡，說明一致）
+        if resolution == .skip { await report(.state(node.id, .skipped, message: action.skipReason)) }
+        return resolution
     }
 
     private func uniqueTarget(_ target: String, in source: any FileSource) async throws -> String {
