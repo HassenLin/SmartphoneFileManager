@@ -329,8 +329,38 @@ public struct IPhoneFileSource: FileSource {
         case let .app(b, p): (remote, bundle) = (p, b)
         default: throw Self.virtualFolderError
         }
-        try await run(["put", isDirectory.boolValue ? "-rf" : "-f", localURL.path, remote], bundle: bundle, timeout: nil)
+        // 單檔：afcclient put 沒有進度輸出，傳輸期間輪詢 iPhone 端檔案大小（`info` 的 st_size）回報進度；
+        // 資料夾由佇列逐檔呼叫，這裡不輪詢
+        let isDir = isDirectory.boolValue
+        let total = isDir ? 0
+            : ((try? FileManager.default.attributesOfItem(atPath: localURL.path)[.size] as? Int64) ?? 0)
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask { [self] in
+                try await run(["put", isDir ? "-rf" : "-f", localURL.path, remote], bundle: bundle, timeout: nil)
+            }
+            if total > 0 {
+                group.addTask { [self] in
+                    while !Task.isCancelled {
+                        try await Task.sleep(for: .seconds(1))
+                        // 輪詢失敗（檔案尚未建立、逾時等）不影響傳輸本身，略過這一輪
+                        if let size = await remoteSize(location) {
+                            onProgress(min(1, Double(size) / Double(total)))
+                        }
+                    }
+                }
+            }
+            try await group.next()   // 輪詢迴圈不會自己結束，先完成的一定是 put
+            group.cancelAll()
+        }
         onProgress(1)
+    }
+
+    /// iPhone 端檔案目前的大小（`info` JSON 的 st_size，可能是字串或數字）；讀不到為 nil
+    private func remoteSize(_ location: Location) async -> Int64? {
+        guard let info = try? await info(location) else { return nil }
+        if let n = info["st_size"] as? Int64 { return n }
+        if let s = info["st_size"] as? String { return Int64(s) }
+        return (info["st_size"] as? NSNumber)?.int64Value
     }
 
     /// 下載單檔時輪詢本機檔案大小回報進度
