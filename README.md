@@ -76,7 +76,7 @@ git clone <repo> SmartphoneFileManager && cd SmartphoneFileManager
 ## 開發
 
 ```bash
-swift test                                            # 單元測試（64 項，含預設略過的實機測試）
+swift test                                            # 單元測試（145 項，含預設略過的實機測試）
 SFM_LIVE=1 swift test --filter LiveDevice             # 實機整合測試（需 Android + iPhone）
 SFM_LIVE=1 swift test --filter MTPLive                # MTP 實機測試（需 MTP 裝置）
 SFM_LIVE_NET="ftp://u:p@host:21 ftpes://… ftps://… sftp://… https://u:p@nas:5006/home" \
@@ -124,7 +124,9 @@ tools/                        install.sh、make-app.sh、make-icon.swift、AppIc
 
 ## 狀態
 
-- `swift build` 零警告；`swift test` 92/92；實機整合測試（Palma Android + iPhone iOS 27）通過。
+- `swift build` 零警告；`swift test` 145/145；實機整合測試（Palma Android + iPhone iOS 27）通過。
+- **安全**：FTP／SFTP 的 lftp 腳本拒絕含換行（LF／CR）的名稱與帳號欄位——lftp 以換行切指令、引號包不住換行，
+  否則 `!` 開頭的下一行會交給 shell 執行（2026-10-31 修正，見 LOG）。
 - 網路實機測試（本機測試伺服器）通過：FTP 被動／主動、FTPS explicit／implicit、SFTP、WebDAV（http）——列表、上傳、下載、
   續傳上傳／下載、改名、資料夾上傳／下載、刪除、錯誤密碼。帳號清單與設定畫面已截圖確認。
 - **已實機驗證**：pCloud 歐洲帳號 Email＋密碼＋兩步驟驗證登入（自動由美國區改至歐洲區）。

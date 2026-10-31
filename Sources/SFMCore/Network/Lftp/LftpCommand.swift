@@ -116,8 +116,26 @@ struct LftpCommand: Sendable, Equatable {
     }
 
     /// 完整腳本：設定＋open＋指令，以換行分隔（lftp -c 接受多行）
-    func script(_ commands: [String]) -> String {
-        (settings + [open] + commands).joined(separator: "\n")
+    ///
+    /// 安全：lftp 以換行切指令，**雙引號也包不住換行**（實測 4.9.3：`echo "a⏎!cmd"` 的第二行被當成新指令，
+    /// `!` 開頭交給 shell 執行）。檔名（本機檔名可含換行）、帳號欄位都會進到腳本，所以這裡是唯一的關卡：
+    /// 任何一行含 LF／CR 就拒絕，不啟動 lftp。`;`、`&&`、U+2028 在引號內實測不會切指令，不需處理。
+    func script(_ commands: [String]) throws -> String {
+        let lines = settings + [open] + commands
+        if let unsafe = lines.first(where: Self.containsLineBreak) {
+            throw NetworkError.unsupportedName(Self.visibleLineBreaks(unsafe))
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    /// 是否含 LF／CR（以 unicode scalar 判斷：Swift 把 "\r\n" 視為一個 Character）
+    static func containsLineBreak(_ text: String) -> Bool {
+        text.unicodeScalars.contains { $0 == "\n" || $0 == "\r" }
+    }
+
+    /// 錯誤訊息用：把換行顯示成 ⏎，讓使用者看得出是哪個名稱
+    static func visibleLineBreaks(_ text: String) -> String {
+        String(String.UnicodeScalarView(text.unicodeScalars.map { $0 == "\n" || $0 == "\r" ? "⏎" : $0 }))
     }
 
     /// sh 單引號跳脫（只用在 `sftp:connect-program` 的私鑰路徑：那一串由 lftp 交給 sh 執行）

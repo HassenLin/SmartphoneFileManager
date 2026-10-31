@@ -243,6 +243,7 @@
 "Export to…" = "匯出到…";
 "Extra lftp settings" = "額外 lftp 設定";
 "FTP / SFTP" = "FTP／SFTP";
+"FTP and SFTP cannot handle names that contain line breaks: %@" = "FTP 與 SFTP 無法處理含換行的名稱：%@";
 "FTP and SFTP need lftp: brew install lftp" = "FTP 與 SFTP 需要 lftp：brew install lftp";
 "FTP and SFTP servers cannot copy files on the server." = "FTP 與 SFTP 伺服器無法在伺服器端複製檔案。";
 "FTP and SFTP use the free lftp tool." = "FTP 與 SFTP 使用免費的 lftp 工具。";

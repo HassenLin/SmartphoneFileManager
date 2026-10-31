@@ -19,6 +19,8 @@ public enum NetworkError: LocalizedError, Equatable, Sendable {
     case alreadyExists(String)
     /// 伺服器回報的其他錯誤（HTTP 狀態、FTP 回應碼、pCloud result）
     case server(String)
+    /// 名稱含換行，無法安全送給 lftp（見 `LftpCommand.script`）；附上出問題的那行（換行顯示為 ⏎）
+    case unsupportedName(String)
 
     public var errorDescription: String? {
         switch self {
@@ -40,6 +42,8 @@ public enum NetworkError: LocalizedError, Equatable, Sendable {
             return String(localized: "Already exists: \(path)")
         case let .server(message):
             return message
+        case let .unsupportedName(detail):
+            return String(localized: "FTP and SFTP cannot handle names that contain line breaks: \(detail)")
         }
     }
 }

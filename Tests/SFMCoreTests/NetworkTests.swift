@@ -278,6 +278,25 @@ struct LftpTests {
         #expect(settings.contains("set cmd:fail-exit yes"))
     }
 
+    /// 換行注入：lftp 以換行切指令、引號包不住換行 → 含 LF／CR 的名稱必須在送出前拒絕
+    @Test func scriptRejectsLineBreaks() throws {
+        let command = LftpCommand(account: account(), options: .standard)
+        let injected = "put " + LftpCommand.quote("/tmp/a\n!touch /tmp/pwned") + " -o " + LftpCommand.quote("/up/a")
+        #expect(throws: NetworkError.unsupportedName(#"put "/tmp/a⏎!touch /tmp/pwned" -o "/up/a""#)) {
+            try command.script([injected])
+        }
+        #expect(throws: NetworkError.self) { try command.script(["rm " + LftpCommand.quote("/x\r\n!ls")]) }
+        #expect(throws: NetworkError.self) { try command.script(["mkdir " + LftpCommand.quote("/x\ry")]) }
+        // 帳號欄位也走同一關卡
+        var bad = account()
+        bad.username = "me\n!id"
+        #expect(throws: NetworkError.self) { try LftpCommand(account: bad, options: .standard).script(["pwd"]) }
+        // 一般名稱（引號、分號、中文、U+2028 在引號內不會切指令）照常產生，每個指令一行
+        let normal = try command.script(["mkdir " + LftpCommand.quote(#"/a "b"; c 中文\#u{2028}d"#)])
+        #expect(normal.hasSuffix("\n" + #"mkdir "/a \"b\"; c 中文\#u{2028}d""#))
+        #expect(normal.split(separator: "\n").count == command.settings.count + 2)
+    }
+
     @Test func extraCommandsOnlyAllowSet() {
         let text = "set ftp:use-feat no\n!rm -rf ~\nset a b; !ls\n\n  set ftp:prefer-epsv yes"
         #expect(LftpCommand.extraSettings(text) == ["set ftp:use-feat no", "set ftp:prefer-epsv yes"])

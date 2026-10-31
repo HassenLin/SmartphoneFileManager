@@ -1,5 +1,12 @@
 # LOG
 
+- 2026-10-31｜**安全修正：FTP／SFTP 換行注入**：lftp 以換行切指令，雙引號也包不住換行（實測 lftp 4.9.3：`echo "a⏎!cmd"`
+  的第二行被當成新指令，`!` 開頭交給 shell 執行；`;`、`&&`、CR、U+2028、NEL 在引號內不會切指令）。本機檔名可含換行，
+  上傳名稱含換行的檔案時，名稱後半段會在使用者的 Mac 上被執行。`LftpCommand.script` 是所有指令（含帳號欄位）組成腳本的唯一關卡，
+  改為任一行含 LF／CR 就丟 `NetworkError.unsupportedName`（訊息以 ⏎ 標出換行），不啟動 lftp。伺服器回傳的名稱經逐行解析已先被切開，
+  不受影響。新增測試 `scriptRejectsLineBreaks`（注入的上傳指令、CRLF、單獨 CR、帳號欄位、正常名稱含引號／分號／中文／U+2028 照常產生）。
+  測試 145 項通過，`swift build` 通過。發現：系統架構 MacSwiftUIArch（ph_62144b_4 附帶發現 S2）；實測確認與修正：SmartphoneFileManager（EMP2002）。
+
 - 2026-10-23｜**修正：Mac → iPhone 上傳沒有單檔進度**：`afcclient put` 不輸出進度，原本只在結束時由 0% 跳到 100%。
   `IPhoneFileSource.upload` 改為傳輸期間每秒以 `afcclient info` 查 iPhone 端檔案的 `st_size`，除以本機大小回報進度
   （輪詢失敗只略過該輪；資料夾由佇列逐檔呼叫，不輪詢）。實機驗證有進度。iPhone → Mac 下載原本就輪詢本機檔案大小，未改。

@@ -56,7 +56,7 @@ public struct FTPFileSource: FileSource {
         if account.protocol == .ftp, account.ftpSecurity != .none, let config = Self.tls12Config {
             environment["OPENSSL_CONF"] = config.path
         }
-        let output = try await ProcessRunner.run(executable, ["-c", command.script(commands)], timeout: timeout,
+        let output = try await ProcessRunner.run(executable, ["-c", try command.script(commands)], timeout: timeout,
                                                  environment: environment)
         guard output.exitCode == 0 else { throw LftpError.classify(output.text, exitCode: output.exitCode) }
         return output.lines
